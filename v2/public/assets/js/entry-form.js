@@ -83,8 +83,20 @@ function refreshCycles() {
 function updateFlatpickrBounds() {
   const cycle = selectedCycle();
   if (!flatpickrInstance) return;
-  flatpickrInstance.set('minDate', cycle ? cycle.start_date : null);
-  flatpickrInstance.set('maxDate', cycle ? cycle.end_date : null);
+  // Bounds are 'Y-m-d' strings but the picker's dateFormat is 'd-m-Y', so parse explicitly;
+  // otherwise flatpickr misreads them and clears/blocks the selected date.
+  const toDate = (s) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || ''));
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  };
+  const keep = flatpickrInstance.selectedDates[0] || null;
+  flatpickrInstance.set('minDate', toDate(cycle?.start_date));
+  flatpickrInstance.set('maxDate', toDate(cycle?.end_date));
+  // Keep the chosen date if it still falls inside the (new) cycle window.
+  if (keep && !flatpickrInstance.selectedDates.length) {
+    const min = toDate(cycle?.start_date), max = toDate(cycle?.end_date);
+    if ((!min || keep >= min) && (!max || keep <= max)) flatpickrInstance.setDate(keep, false);
+  }
 }
 
 function updateWeekdayLabel() {

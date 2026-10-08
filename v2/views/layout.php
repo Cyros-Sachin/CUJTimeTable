@@ -44,7 +44,7 @@ $script = $pageScripts[$activeNav ?? ''] ?? null;
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
   <?php if ($script): ?>
-  <script type="module" src="/assets/js/<?= e($script) ?>"></script>
+  <script type="module" src="/assets/js/<?= e($script) ?>?v=<?= (int) @filemtime(__DIR__ . '/../public/assets/js/' . $script) ?>"></script>
   <?php endif; ?>
 </body>
 </html>
