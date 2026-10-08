@@ -1,0 +1,11 @@
+vendor
+.git
+.gitignore
+.env
+.env.*
+*.md
+storage/tmp/*
+storage/pdf/*
+storage/uploads/*
+storage/sessions/*
+storage/branding/*

@@ -1,0 +1,13 @@
+node_modules/
+.env
+*.log
+npm-debug.log*
+.DS_Store
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+server/storage/
+coverage/
+*.local

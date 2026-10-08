@@ -1,0 +1,10 @@
+/vendor/
+.env
+*.log
+storage/tmp/*
+storage/pdf/*
+storage/uploads/*
+storage/sessions/*
+storage/branding/*
+!storage/*/.gitkeep
+.DS_Store
