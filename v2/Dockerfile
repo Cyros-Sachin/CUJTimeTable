@@ -28,6 +28,6 @@ RUN composer dump-autoload --optimize --no-dev \
  && mkdir -p resources/fonts storage/tmp storage/pdf storage/uploads storage/sessions storage/branding \
  && cp /usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari.ttf resources/fonts/LohitDevanagari-Regular.ttf \
  && test -f resources/fonts/LohitDevanagari-Regular.ttf \
- && chown -R www-data:www-data storage && chmod +x docker/entrypoint.sh
+ && chown -R www-data:www-data storage && sed -i 's/[[:cntrl:]]$//' docker/entrypoint.sh && chmod +x docker/entrypoint.sh
 ENTRYPOINT ["/var/www/html/docker/entrypoint.sh"]
 CMD ["apache2-foreground"]
