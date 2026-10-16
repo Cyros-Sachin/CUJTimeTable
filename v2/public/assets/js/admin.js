@@ -18,8 +18,72 @@ function actionsCell(onEdit, onDelete) {
   ]);
 }
 
+// ---- Excel/CSV bulk import card (Departments, Programs, Coordinators) -------------------
+function importCard({ resource, label, onImported }) {
+  let file = null;
+  const input = el('input', { type: 'file', accept: '.xlsx,.csv', class: 'd-none' });
+  const fileName = el('span', { class: 'small fw-semibold' });
+  const result = el('div', { class: 'mt-2' });
+  const validateBtn = el('button', { type: 'button', class: 'btn btn-outline-secondary btn-sm', disabled: 'disabled' }, 'Validate only');
+  const uploadBtn = el('button', { type: 'button', class: 'btn btn-primary btn-sm', disabled: 'disabled' }, 'Upload');
+
+  input.addEventListener('change', () => {
+    file = input.files[0] || null;
+    fileName.textContent = file ? file.name : '';
+    result.innerHTML = '';
+    validateBtn.disabled = uploadBtn.disabled = !file;
+  });
+
+  async function run(dryRun) {
+    if (!file) return;
+    result.innerHTML = '';
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('dry_run', dryRun ? 'true' : 'false');
+    try {
+      const res = await apiUpload(`/admin/${resource}/import`, fd);
+      const d = res.data;
+      const skippedNote = d.skipped ? `; ${d.skipped} already exist${dryRun ? ' and will be skipped' : 'ed'}` : '';
+      if (dryRun) {
+        result.appendChild(el('p', { class: 'text-success small mb-0' }, `${d.valid} new ${label} ready to add${skippedNote}.`));
+      } else {
+        toast(`${d.inserted} ${label} added${skippedNote}`);
+        file = null;
+        input.value = '';
+        fileName.textContent = '';
+        validateBtn.disabled = uploadBtn.disabled = true;
+        await onImported(d);
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.rows && err.rows.length) {
+        const tbl = el('table', { class: 'table table-sm mb-0' }, [
+          el('thead', { class: 'table-danger' }, el('tr', {}, ['Row', 'Field', 'Message'].map((h) => el('th', {}, h)))),
+          el('tbody', {}, err.rows.map((r) => el('tr', {}, [el('td', {}, String(r.row)), el('td', {}, r.field), el('td', {}, r.message)]))),
+        ]);
+        result.appendChild(el('div', { class: 'table-scroll', style: 'max-height:14rem;overflow-y:auto;' }, tbl));
+      } else {
+        toast(err instanceof ApiError ? err.message : 'Upload failed', 'error');
+      }
+    }
+  }
+  validateBtn.addEventListener('click', () => run(true));
+  uploadBtn.addEventListener('click', () => run(false));
+
+  return el('div', { class: 'card-surface p-3' }, [
+    el('div', { class: 'd-flex flex-wrap align-items-center justify-content-between mb-2' }, [
+      el('h3', { class: 'h6 fw-semibold mb-0' }, `Bulk add ${label} from Excel`),
+      el('a', { href: `/api/admin/${resource}/template`, class: 'small' }, [el('i', { class: 'bi bi-download me-1' }), 'Download template']),
+    ]),
+    el('div', { class: 'd-flex flex-wrap align-items-center gap-2' }, [
+      el('button', { type: 'button', class: 'btn btn-outline-secondary btn-sm', onclick: () => input.click() }, [el('i', { class: 'bi bi-cloud-upload me-1' }), 'Choose .xlsx / .csv']),
+      input, fileName, validateBtn, uploadBtn,
+    ]),
+    result,
+  ]);
+}
+
 // ---- Generic simple-resource CRUD (Departments, Subject Types, Time Slots) ----
-async function renderSimpleCrud({ resource, title, fields, columns, deleteNote }) {
+async function renderSimpleCrud({ resource, title, fields, columns, deleteNote, importLabel }) {
   root.innerHTML = '<div class="skeleton" style="height:240px"></div>';
   const rows = (await apiGet(`/admin/${resource}`)).data;
 
@@ -27,6 +91,10 @@ async function renderSimpleCrud({ resource, title, fields, columns, deleteNote }
   addBtn.addEventListener('click', () => openCreateEdit());
 
   const wrap = el('div', { class: 'd-flex flex-column gap-3' }, [
+    importLabel ? importCard({
+      resource, label: importLabel,
+      onImported: async () => renderTable((await apiGet(`/admin/${resource}`)).data),
+    }) : '',
     el('div', { class: 'd-flex justify-content-end' }, addBtn),
     el('div', { class: 'card-surface p-0', id: 'crudTableWrap' }),
   ]);
@@ -97,15 +165,7 @@ async function renderDepartments() {
     fields: [{ name: 'code', label: 'Code', type: 'text' }, { name: 'name', label: 'Name', type: 'text' }],
     columns: [{ key: 'code', label: 'Code' }, { key: 'name', label: 'Name' }],
     deleteNote: (d) => `"${d.name}" will be deactivated if it has programs, or deleted otherwise.`,
-  });
-}
-
-async function renderSubjectTypes() {
-  await renderSimpleCrud({
-    resource: 'subject-types', title: 'Subject type',
-    fields: [{ name: 'name', label: 'Name', type: 'text' }],
-    columns: [{ key: 'name', label: 'Name' }],
-    deleteNote: (d) => `"${d.name}" will be deactivated if used by entries, or deleted otherwise.`,
+    importLabel: 'departments',
   });
 }
 
@@ -113,7 +173,6 @@ async function renderTimeSlots() {
   await renderSimpleCrud({
     resource: 'time-slots', title: 'Time slot',
     fields: [
-      { name: 'label', label: 'Label', type: 'text', hint: 'e.g. 2:00PM-5:00PM' },
       { name: 'start_time', label: 'Start time', type: 'time' },
       { name: 'end_time', label: 'End time', type: 'time' },
     ],
@@ -133,6 +192,7 @@ async function renderPrograms() {
 
   root.innerHTML = '';
   root.appendChild(el('div', { class: 'd-flex flex-column gap-3' }, [
+    importCard({ resource: 'programs', label: 'programs', onImported: async () => renderTable((await apiGet('/admin/programs')).data) }),
     el('div', { class: 'd-flex justify-content-end' }, addBtn),
     el('div', { class: 'card-surface p-0', id: 'crudTableWrap' }),
   ]));
@@ -213,8 +273,9 @@ async function renderSessionsCycles() {
     const bodyRows = items.map((s) => el('tr', {}, [
       el('td', {}, s.label),
       el('td', {}, s.is_current ? el('span', { class: 'chip chip-open' }, 'Current') : ''),
+      actionsCell(() => openSessionModal(s), null),
     ]));
-    sessionsWrap.appendChild(el('div', { class: 'table-scroll' }, table(['Session', 'Current'], bodyRows)));
+    sessionsWrap.appendChild(el('div', { class: 'table-scroll' }, table(['Session', 'Current', ''], bodyRows)));
   }
 
   function renderCyclesTable(items) {
@@ -224,10 +285,13 @@ async function renderSessionsCycles() {
       el('td', {}, c.session_label || ''),
       el('td', {}, `${ddmmyyyy(c.start_date)} – ${ddmmyyyy(c.end_date)}`),
       el('td', {}, c.status === 'LOCKED' ? el('span', { class: 'chip chip-locked' }, [el('i', { class: 'bi bi-lock-fill me-1' }), 'Locked']) : el('span', { class: 'chip chip-open' }, 'Open')),
-      el('td', {}, el('button', {
-        type: 'button', class: 'btn btn-sm btn-outline-secondary',
-        onclick: () => toggleCycleStatus(c),
-      }, c.status === 'OPEN' ? [el('i', { class: 'bi bi-lock me-1' }), 'Lock'] : [el('i', { class: 'bi bi-unlock me-1' }), 'Unlock'])),
+      el('td', { class: 'text-end text-nowrap' }, [
+        el('button', { type: 'button', class: 'btn btn-sm btn-link', onclick: () => openCycleModal(c), title: 'Edit' }, el('i', { class: 'bi bi-pencil' })),
+        el('button', {
+          type: 'button', class: 'btn btn-sm btn-outline-secondary',
+          onclick: () => toggleCycleStatus(c),
+        }, c.status === 'OPEN' ? [el('i', { class: 'bi bi-lock me-1' }), 'Lock'] : [el('i', { class: 'bi bi-unlock me-1' }), 'Unlock']),
+      ]),
     ]));
     cyclesWrap.appendChild(el('div', { class: 'table-scroll' }, table(['Title', 'Session', 'Window', 'Status', ''], bodyRows)));
   }
@@ -242,15 +306,17 @@ async function renderSessionsCycles() {
     }
   }
 
-  async function openSessionModal() {
+  async function openSessionModal(item) {
     const values = await openFormModal({
-      title: 'Add academic session',
+      title: item ? 'Edit academic session' : 'Add academic session',
       fields: [{ name: 'label', label: 'Label', type: 'text', hint: 'e.g. 2026-27' }, { name: 'is_current', label: 'Make this the current session', type: 'checkbox' }],
+      initialValues: item ? { label: item.label, is_current: !!Number(item.is_current) } : {},
     });
     if (!values) return;
     try {
-      await apiSend('POST', '/admin/sessions', values);
-      toast('Session created');
+      if (item) await apiSend('PUT', `/admin/sessions/${item.id}`, values);
+      else await apiSend('POST', '/admin/sessions', values);
+      toast(item ? 'Session updated' : 'Session created');
       closeFormModal();
       renderSessionsTable((await apiGet('/admin/sessions')).data);
     } catch (err) {
@@ -258,10 +324,10 @@ async function renderSessionsCycles() {
     }
   }
 
-  async function openCycleModal() {
+  async function openCycleModal(item) {
     const sessions = (await apiGet('/admin/sessions')).data;
     const values = await openFormModal({
-      title: 'Add exam cycle',
+      title: item ? 'Edit exam cycle' : 'Add exam cycle',
       fields: [
         { name: 'academic_session_id', label: 'Academic session', type: 'select', options: sessions.map((s) => ({ value: s.id, label: s.label })) },
         { name: 'title', label: 'Title', type: 'text' },
@@ -269,13 +335,16 @@ async function renderSessionsCycles() {
         { name: 'start_date', label: 'Start date', type: 'date' },
         { name: 'end_date', label: 'End date', type: 'date' },
       ],
-      initialValues: { title: 'End Semester Examination' },
+      initialValues: item
+        ? { academic_session_id: item.academic_session_id, title: item.title, month_year: item.month_year, start_date: item.start_date.slice(0, 10), end_date: item.end_date.slice(0, 10) }
+        : { title: 'End Semester Examination' },
     });
     if (!values) return;
     values.academic_session_id = Number(values.academic_session_id);
     try {
-      await apiSend('POST', '/admin/cycles', values);
-      toast('Exam cycle created');
+      if (item) await apiSend('PUT', `/admin/cycles/${item.id}`, values);
+      else await apiSend('POST', '/admin/cycles', values);
+      toast(item ? 'Exam cycle updated' : 'Exam cycle created');
       closeFormModal();
       renderCyclesTable((await apiGet('/admin/cycles')).data);
     } catch (err) {
@@ -294,6 +363,7 @@ async function renderUsers() {
 
   root.innerHTML = '';
   root.appendChild(el('div', { class: 'd-flex flex-column gap-3' }, [
+    importCard({ resource: 'users', label: 'coordinators', onImported: async (d) => { downloadCredentials(d.created || [], d.emailed || 0); renderTable((await apiGet('/admin/users')).data); } }),
     el('div', { class: 'd-flex justify-content-end' }, addBtn),
     el('div', { class: 'card-surface p-0', id: 'usersWrap' }),
   ]));
@@ -315,6 +385,21 @@ async function renderUsers() {
     wrap.appendChild(el('div', { class: 'table-scroll' }, table(['Name', 'Email', 'Role', 'Department', 'Status', 'Last login', ''], bodyRows)));
   }
 
+  // Temp passwords are only known now, so hand them over as a CSV the admin can keep.
+  function downloadCredentials(created, emailed) {
+    if (!created.length) return;
+    const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const lines = [['Name', 'Email', 'Department', 'Temporary password', 'Email sent'].map(esc).join(',')]
+      .concat(created.map((c) => [c.name, c.email, c.department, c.temp_password, c.email_sent ? 'Yes' : 'No'].map(esc).join(',')));
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+    const a = el('a', { href: url, download: 'Coordinator_Credentials.csv' });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast(`${emailed} of ${created.length} credential emails sent. Credentials CSV downloaded.`);
+  }
+
   async function openCreateModal() {
     const values = await openFormModal({
       title: 'Add department coordinator',
@@ -330,7 +415,7 @@ async function renderUsers() {
       const res = await apiSend('POST', '/admin/users', values);
       toast('Coordinator created');
       closeFormModal();
-      showTempPassword(res.data.email, res.data.temp_password);
+      showTempPassword(res.data.email, res.data.temp_password, {});
       renderTable((await apiGet('/admin/users')).data);
     } catch (err) {
       if (err instanceof ApiError) { if (err.fields) formModalErrors(err); toast(err.message, 'error'); }
@@ -350,18 +435,40 @@ async function renderUsers() {
   async function resetPassword(user) {
     try {
       const res = await apiSend('POST', `/admin/users/${user.id}/reset-password`);
-      showTempPassword(user.email, res.data.temp_password);
+      showTempPassword(user.email, res.data.temp_password, { emailSent: res.data.email_sent, emailError: res.data.email_error });
     } catch (err) {
       toast(err instanceof ApiError ? err.message : 'Could not reset password', 'error');
     }
   }
 
-  function showTempPassword(email, password) {
+  function showTempPassword(email, password, { emailSent, emailError } = {}) {
+    let visible = false;
+    const pwText = el('span', { class: 'flex-grow-1 text-break', style: 'font-family:monospace' }, '\u2022'.repeat(password.length));
+    const eyeIcon = el('i', { class: 'bi bi-eye' });
+    const eyeBtn = el('button', { type: 'button', class: 'btn btn-sm btn-link text-secondary p-0', title: 'Show / hide password', 'aria-label': 'Show or hide password' }, eyeIcon);
+    eyeBtn.addEventListener('click', () => {
+      visible = !visible;
+      pwText.textContent = visible ? password : '\u2022'.repeat(password.length);
+      eyeIcon.className = visible ? 'bi bi-eye-slash' : 'bi bi-eye';
+    });
+    const copyBtn = el('button', { type: 'button', class: 'btn btn-sm btn-link text-secondary p-0', title: 'Copy password', 'aria-label': 'Copy password' }, el('i', { class: 'bi bi-clipboard' }));
+    copyBtn.addEventListener('click', () => {
+      if (navigator.clipboard) navigator.clipboard.writeText(password);
+      toast('Copied');
+    });
+
+    const banner = emailSent === true
+      ? el('div', { class: 'alert alert-success py-2 small' }, ['An email with the new password was sent to ', el('strong', {}, email), '.'])
+      : emailSent === false
+        ? el('div', { class: 'alert alert-danger py-2 small' }, `The email could not be sent${emailError ? ` (${emailError})` : ''}. Share the password below manually.`)
+        : '';
+
     const modalEl = el('div', { class: 'modal fade' }, el('div', { class: 'modal-dialog' }, el('div', { class: 'modal-content' }, [
       el('div', { class: 'modal-header' }, [el('h5', { class: 'modal-title' }, 'Temporary password'), el('button', { type: 'button', class: 'btn-close', 'data-bs-dismiss': 'modal' })]),
       el('div', { class: 'modal-body' }, [
-        el('p', {}, ['Share this temporary password with ', el('strong', {}, email), '. They will be required to change it on first login.']),
-        el('p', { class: 'border rounded px-3 py-2', style: 'font-family:monospace' }, password),
+        banner,
+        el('p', {}, ['Temporary password for ', el('strong', {}, email), '. They will be required to change it on first login.']),
+        el('div', { class: 'd-flex align-items-center gap-2 border rounded px-3 py-2' }, [pwText, eyeBtn, copyBtn]),
       ]),
       el('div', { class: 'modal-footer' }, el('button', { type: 'button', class: 'btn btn-primary', 'data-bs-dismiss': 'modal' }, 'Done')),
     ])));
@@ -466,7 +573,6 @@ const renderers = {
   departments: renderDepartments,
   programs: renderPrograms,
   'time-slots': renderTimeSlots,
-  'subject-types': renderSubjectTypes,
   'sessions-cycles': renderSessionsCycles,
   users: renderUsers,
   branding: renderBranding,

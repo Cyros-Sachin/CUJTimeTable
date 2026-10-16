@@ -6,11 +6,12 @@ import { UploadCloud, Download } from 'lucide-react';
 import { Button } from './ui/Button';
 import { useBulkUpload } from '@/api/queries';
 import { ApiError } from '@/api/types';
+import { buildQuery } from '@/api/client';
 import type { ExamType } from '@/api/types';
 
 interface RowError { row: number; field: string; message: string }
 
-export function UploadCard({ cycleId, examType, departmentId }: { cycleId: number | undefined; examType: ExamType; departmentId?: number }) {
+export function UploadCard({ cycleId, examType, departmentId, programId, programName }: { cycleId: number | undefined; examType: ExamType; departmentId?: number; programId?: number; programName?: string }) {
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [errors, setErrors] = useState<RowError[]>([]);
@@ -60,8 +61,8 @@ export function UploadCard({ cycleId, examType, departmentId }: { cycleId: numbe
     <div className="rounded border border-border bg-white p-4 shadow-subtle">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-text">Table upload</h3>
-        <a href={`/api/entries/template?exam_type=${examType}`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-          <Download size={14} /> Download template
+        <a href={`/api/entries/template${buildQuery({ exam_type: examType, exam_cycle_id: cycleId, department_id: departmentId, program_id: programId })}`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+          <Download size={14} /> Download template{programName ? ` for ${programName}` : ' for this cycle'}
         </a>
       </div>
 

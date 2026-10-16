@@ -7,8 +7,15 @@ export function notFoundApi(req, res) {
 
 export function errorHandler(err, req, res, next) { // eslint-disable-line no-unused-vars
   if (err instanceof HttpError) {
+    // Upload validation passes its per-row errors as fields.rows; the clients read them from error.rows.
+    const { rows, ...fields } = err.fields || {};
     return res.status(err.status).json({
-      error: { code: err.code, message: err.message, ...(err.fields ? { fields: err.fields } : {}) },
+      error: {
+        code: err.code,
+        message: err.message,
+        ...(Array.isArray(rows) ? { rows } : {}),
+        ...(Object.keys(fields).length ? { fields } : {}),
+      },
     });
   }
 

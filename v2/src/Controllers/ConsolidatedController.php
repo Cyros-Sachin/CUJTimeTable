@@ -14,7 +14,6 @@ use App\Services\EntryService;
 use App\Services\ExcelService;
 use App\Services\PdfService;
 use App\Services\RefNumberService;
-use ZipArchive;
 
 class ConsolidatedController
 {
@@ -138,28 +137,21 @@ class ConsolidatedController
         }
 
         $cycleId = (int) ($filters['cycle_id'] ?? $rows[0]['exam_cycle_id'] ?? 0);
-        $tmpZip = tempnam(sys_get_temp_dir(), 'cuj_zip_');
-        $zip = new ZipArchive();
-        $zip->open($tmpZip, ZipArchive::OVERWRITE);
 
+        // One datesheet per department/program/semester, in department order, merged into a single PDF.
+        $paramsList = [];
         foreach ($groups as $group) {
             $ref = Db::transaction(fn ($conn) => RefNumberService::getOrCreate($conn, $cycleId, $group['programId'], $group['semester'], $group['examType']));
-            $pdfBinary = PdfService::renderDatesheetPdf([
+            $paramsList[] = [
                 'refNo' => $ref['ref_no'], 'issuedOn' => $ref['issued_on'], 'cycleTitle' => $group['cycleTitle'], 'cycleMonthYear' => $group['cycleMonthYear'],
                 'departmentName' => $group['departmentName'], 'programName' => $group['programName'], 'semester' => $group['semester'],
                 'examType' => $group['examType'], 'rows' => $group['rows'],
-            ]);
-            $examLabel = $group['examType'] === 'REAPPEAR' ? 'Reappear' : 'Regular';
-            $cycleSlug = preg_replace('/[,\s]+/', '-', $group['cycleMonthYear']);
-            $fileName = "Datesheet_{$group['departmentCode']}_{$group['programCode']}_Sem{$group['semester']}_{$examLabel}_{$cycleSlug}.pdf";
-            $zip->addFromString($group['departmentName'] . '/' . $fileName, $pdfBinary);
+            ];
         }
-        $zip->close();
-        $binary = (string) file_get_contents($tmpZip);
-        @unlink($tmpZip);
+        $pdfBinary = PdfService::renderCombinedDatesheetPdf($paramsList);
 
-        AuditService::log((int) $user['id'], 'EXPORT_ZIP', 'consolidated', null, $filters, $request->ip);
+        AuditService::log((int) $user['id'], 'EXPORT_ALL_PDF', 'consolidated', null, $filters, $request->ip);
 
-        Response::streamBinary($binary, 'CUJ_All_Datesheets.zip', 'application/zip');
+        Response::streamPdf($pdfBinary, 'CUJ_All_Datesheets.pdf', true);
     }
 }

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
-import { Plus, KeyRound } from 'lucide-react';
+import { Plus, KeyRound, Eye, EyeOff, Copy } from 'lucide-react';
 import { useAdminUsers, useCreateUser, useUpdateUser, useResetPassword, useMeta } from '@/api/queries';
 import type { AdminUser } from '@/api/types';
 import { Button } from '@/components/ui/Button';
@@ -26,13 +26,15 @@ export default function UsersAdminPage() {
   const { data: meta } = useMeta();
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [tempPassword, setTempPassword] = useState<{ email: string; password: string } | null>(null);
+  const [tempPassword, setTempPassword] = useState<{ email: string; password: string; emailSent?: boolean; emailError?: string | null } | null>(null);
+  const [showTemp, setShowTemp] = useState(false);
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FormValues>();
 
   async function onSubmit(values: FormValues) {
     try {
       const res = await create.mutateAsync({ ...values, department_id: Number(values.department_id) });
       toast.success('Coordinator created');
+      setShowTemp(false);
       setTempPassword({ email: res.data.email, password: res.data.temp_password });
       setModalOpen(false);
     } catch (err: any) {
@@ -52,7 +54,8 @@ export default function UsersAdminPage() {
   async function doReset(user: AdminUser) {
     try {
       const res = await resetPassword.mutateAsync(user.id);
-      setTempPassword({ email: user.email, password: res.data.temp_password });
+      setShowTemp(false);
+      setTempPassword({ email: user.email, password: res.data.temp_password, emailSent: res.data.email_sent, emailError: res.data.email_error });
     } catch (err: any) {
       toast.error(err?.message || 'Could not reset password');
     }
@@ -108,10 +111,33 @@ export default function UsersAdminPage() {
       </Modal>
 
       <Modal open={!!tempPassword} onClose={() => setTempPassword(null)} title="Temporary password">
+        {tempPassword?.emailSent === true ? (
+          <p className="mb-3 rounded bg-success/10 px-3 py-2 text-sm text-success">
+            An email with the new password was sent to <strong>{tempPassword.email}</strong>.
+          </p>
+        ) : null}
+        {tempPassword?.emailSent === false ? (
+          <p className="mb-3 rounded bg-danger/10 px-3 py-2 text-sm text-danger">
+            The email could not be sent{tempPassword.emailError ? ` (${tempPassword.emailError})` : ''}. Share the password below manually.
+          </p>
+        ) : null}
         <p className="text-sm text-text">
-          Share this temporary password with <strong>{tempPassword?.email}</strong>. They will be required to change it on first login.
+          Temporary password for <strong>{tempPassword?.email}</strong>. They will be required to change it on first login.
         </p>
-        <p className="mt-3 rounded border border-border bg-page px-3 py-2 font-mono text-sm">{tempPassword?.password}</p>
+        <div className="mt-3 flex items-center gap-2 rounded border border-border bg-page px-3 py-2">
+          <span className="flex-1 break-all font-mono text-sm">{showTemp ? tempPassword?.password : '\u2022'.repeat(tempPassword?.password.length || 12)}</span>
+          <button type="button" className="text-muted hover:text-text" onClick={() => setShowTemp((v) => !v)} aria-label={showTemp ? 'Hide password' : 'Show password'}>
+            {showTemp ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+          <button
+            type="button"
+            className="text-muted hover:text-text"
+            aria-label="Copy password"
+            onClick={() => { navigator.clipboard?.writeText(tempPassword?.password || ''); toast.success('Copied'); }}
+          >
+            <Copy size={16} />
+          </button>
+        </div>
         <div className="mt-4 flex justify-end">
           <Button onClick={() => setTempPassword(null)}>Done</Button>
         </div>

@@ -9,6 +9,17 @@ use App\Core\Db;
 Db::waitForConnection();
 $pdo = Db::conn();
 
+// Subject types are restricted to Core / Elective. Idempotent: safe on every boot,
+// and migrates databases created with the older 8-type seed.
+$pdo->exec("INSERT IGNORE INTO subject_types (name) VALUES ('Core'), ('Elective')");
+$pdo->exec("UPDATE subject_types SET is_active = 1 WHERE name IN ('Core', 'Elective')");
+$electiveId = (int) $pdo->query("SELECT id FROM subject_types WHERE name = 'Elective'")->fetch()['id'];
+$pdo->prepare(
+    "UPDATE exam_entries SET subject_type_id = :id
+     WHERE subject_type_id NOT IN (SELECT id FROM subject_types WHERE name IN ('Core', 'Elective'))"
+)->execute(['id' => $electiveId]);
+$pdo->exec("DELETE FROM subject_types WHERE name NOT IN ('Core', 'Elective')");
+
 $count = (int) $pdo->query('SELECT COUNT(*) AS c FROM users')->fetch()['c'];
 if ($count > 0) {
     fwrite(STDOUT, "[seed] Users already present, skipping seed\n");

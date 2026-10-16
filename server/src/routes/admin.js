@@ -10,13 +10,47 @@ import { requireRole } from '../middleware/rbac.js';
 import { validateBody, validateQuery } from '../middleware/validate.js';
 import { httpError } from '../utils/httpError.js';
 import { writeAudit } from '../services/auditService.js';
-import { uploadImage } from '../middleware/upload.js';
+import { uploadImage, uploadSingle } from '../middleware/upload.js';
+import { sendPasswordResetMail } from '../services/mailService.js';
+import {
+  buildDepartmentsTemplate, buildProgramsTemplate, importDepartments, importPrograms,
+} from '../services/masterImportService.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireRole('EXAM_CELL'));
 
 async function audit(req, action, entity, entityId, details) {
   await writeAudit({ userId: req.user.id, action, entity, entityId, details, ip: req.ip });
+}
+
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+function sendWorkbook(res, workbook, filename) {
+  res.setHeader('Content-Type', XLSX_MIME);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  return workbook.xlsx.write(res).then(() => res.end());
+}
+
+function importUpload(req, res, next) {
+  uploadSingle(req, res, (err) => {
+    if (err) {
+      return next(httpError(422, 'UPLOAD_INVALID', err.message === 'UNSUPPORTED_FILE_TYPE'
+        ? 'Only .xlsx or .csv files are accepted' : 'File upload failed', { rows: [] }));
+    }
+    if (!req.file) return next(httpError(422, 'UPLOAD_INVALID', 'No file uploaded', { rows: [] }));
+    return next();
+  });
+}
+
+function makeImportHandler(importer, entity) {
+  return async (req, res, next) => {
+    try {
+      const dryRun = req.body.dry_run === 'true';
+      const result = await importer(req.file, { dryRun });
+      if (!dryRun) await audit(req, 'ADMIN_BULK_IMPORT', entity, null, { inserted: result.inserted, skipped: result.skipped });
+      res.status(dryRun ? 200 : 201).json({ data: result });
+    } catch (err) { next(err); }
+  };
 }
 
 // ---- Departments ----------------------------------------------------------
@@ -32,6 +66,11 @@ adminRouter.get('/departments', async (req, res, next) => {
     res.json({ data: rows });
   } catch (err) { next(err); }
 });
+
+adminRouter.get('/departments/template', async (req, res, next) => {
+  try { await sendWorkbook(res, await buildDepartmentsTemplate(), 'Departments_Template.xlsx'); } catch (err) { next(err); }
+});
+adminRouter.post('/departments/import', importUpload, makeImportHandler(importDepartments, 'departments'));
 
 adminRouter.post('/departments', validateBody(departmentSchema), async (req, res, next) => {
   try {
@@ -83,6 +122,11 @@ adminRouter.get('/programs', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+adminRouter.get('/programs/template', async (req, res, next) => {
+  try { await sendWorkbook(res, await buildProgramsTemplate(), 'Programs_Template.xlsx'); } catch (err) { next(err); }
+});
+adminRouter.post('/programs/import', importUpload, makeImportHandler(importPrograms, 'programs'));
+
 adminRouter.post('/programs', validateBody(programSchema), async (req, res, next) => {
   try {
     const [result] = await pool.execute(
@@ -119,38 +163,11 @@ adminRouter.delete('/programs/:id', async (req, res, next) => {
 });
 
 // ---- Subject types ------------------------------------------------------
-const subjectTypeSchema = z.object({ name: z.string().trim().min(1).max(100), is_active: z.coerce.boolean().optional() });
-
+// Fixed to Core / Elective (see seedService.normalizeSubjectTypes); read-only.
 adminRouter.get('/subject-types', async (req, res, next) => {
   try {
     const [rows] = await pool.query('SELECT * FROM subject_types ORDER BY id');
     res.json({ data: rows });
-  } catch (err) { next(err); }
-});
-adminRouter.post('/subject-types', validateBody(subjectTypeSchema), async (req, res, next) => {
-  try {
-    const [result] = await pool.execute('INSERT INTO subject_types (name) VALUES (:name)', req.body);
-    await audit(req, 'ADMIN_CREATE', 'subject_types', result.insertId, req.body);
-    res.status(201).json({ data: { id: result.insertId, ...req.body } });
-  } catch (err) { next(err); }
-});
-adminRouter.put('/subject-types/:id', validateBody(subjectTypeSchema.partial()), async (req, res, next) => {
-  try {
-    const fields = Object.keys(req.body);
-    if (!fields.length) throw httpError(400, 'BAD_REQUEST', 'No fields to update');
-    const sets = fields.map((f) => `${f} = :${f}`).join(', ');
-    await pool.execute(`UPDATE subject_types SET ${sets} WHERE id = :id`, { ...req.body, id: req.params.id });
-    await audit(req, 'ADMIN_UPDATE', 'subject_types', req.params.id, req.body);
-    res.json({ data: { ok: true } });
-  } catch (err) { next(err); }
-});
-adminRouter.delete('/subject-types/:id', async (req, res, next) => {
-  try {
-    const [[{ count }]] = await pool.query('SELECT COUNT(*) AS count FROM exam_entries WHERE subject_type_id = :id', { id: req.params.id });
-    if (Number(count) > 0) await pool.execute('UPDATE subject_types SET is_active = 0 WHERE id = :id', { id: req.params.id });
-    else await pool.execute('DELETE FROM subject_types WHERE id = :id', { id: req.params.id });
-    await audit(req, 'ADMIN_DELETE', 'subject_types', req.params.id);
-    res.json({ data: { ok: true } });
   } catch (err) { next(err); }
 });
 
@@ -273,6 +290,13 @@ adminRouter.put('/cycles/:id', validateBody(cycleSchema.partial()), async (req, 
   try {
     const fields = Object.keys(req.body);
     if (!fields.length) throw httpError(400, 'BAD_REQUEST', 'No fields to update');
+    if (req.body.start_date || req.body.end_date) {
+      const [[current]] = await pool.query('SELECT start_date, end_date FROM exam_cycles WHERE id = :id', { id: req.params.id });
+      if (!current) throw httpError(404, 'NOT_FOUND', 'Exam cycle not found');
+      const start = req.body.start_date || current.start_date;
+      const end = req.body.end_date || current.end_date;
+      if (end < start) throw httpError(422, 'VALIDATION', 'end_date must be on or after start_date', { end_date: 'Must be after start date' });
+    }
     const sets = fields.map((f) => `${f} = :${f}`).join(', ');
     await pool.execute(`UPDATE exam_cycles SET ${sets} WHERE id = :id`, { ...req.body, id: req.params.id });
     await audit(req, 'ADMIN_UPDATE', 'exam_cycles', req.params.id, req.body);
@@ -341,11 +365,20 @@ adminRouter.put('/users/:id', validateBody(updateUserSchema), async (req, res, n
 
 adminRouter.post('/users/:id/reset-password', async (req, res, next) => {
   try {
+    const [[user]] = await pool.query(
+      `SELECT u.id, u.name, u.email, d.name AS department_name FROM users u
+       LEFT JOIN departments d ON d.id = u.department_id WHERE u.id = :id AND u.role = 'DEPT_COORDINATOR'`,
+      { id: req.params.id },
+    );
+    if (!user) throw httpError(404, 'NOT_FOUND', 'Coordinator not found');
     const tempPassword = randomPassword();
     const hash = await bcrypt.hash(tempPassword, 11);
-    await pool.execute('UPDATE users SET password_hash = :hash, must_change_password = 1 WHERE id = :id', { hash, id: req.params.id });
-    await audit(req, 'ADMIN_RESET_PASSWORD', 'users', req.params.id);
-    res.json({ data: { temp_password: tempPassword } });
+    await pool.execute('UPDATE users SET password_hash = :hash, must_change_password = 1 WHERE id = :id', { hash, id: user.id });
+    const mail = await sendPasswordResetMail({
+      to: user.email, name: user.name, departmentName: user.department_name, tempPassword,
+    });
+    await audit(req, 'ADMIN_RESET_PASSWORD', 'users', req.params.id, { email_sent: mail.sent });
+    res.json({ data: { temp_password: tempPassword, email: user.email, email_sent: mail.sent, email_error: mail.error || null } });
   } catch (err) { next(err); }
 });
 

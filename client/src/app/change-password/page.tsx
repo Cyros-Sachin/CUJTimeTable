@@ -10,7 +10,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { useChangePassword } from '@/api/queries';
 import { ApiError } from '@/api/types';
 import { Field } from '@/components/ui/Field';
-import { Input } from '@/components/ui/Input';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 import { Button } from '@/components/ui/Button';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -63,13 +63,13 @@ export default function ChangePasswordPage() {
 
         <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
           <Field label="Current password" error={errors.current_password?.message} htmlFor="current_password">
-            <Input id="current_password" type="password" autoComplete="current-password" invalid={!!errors.current_password} {...register('current_password')} />
+            <PasswordInput id="current_password" autoComplete="current-password" invalid={!!errors.current_password} {...register('current_password')} />
           </Field>
           <Field label="New password" error={errors.new_password?.message} hint="At least 10 characters with a letter and a digit." htmlFor="new_password">
-            <Input id="new_password" type="password" autoComplete="new-password" invalid={!!errors.new_password} {...register('new_password')} />
+            <PasswordInput id="new_password" autoComplete="new-password" invalid={!!errors.new_password} {...register('new_password')} />
           </Field>
           <Field label="Confirm new password" error={errors.confirm_password?.message} htmlFor="confirm_password">
-            <Input id="confirm_password" type="password" autoComplete="new-password" invalid={!!errors.confirm_password} {...register('confirm_password')} />
+            <PasswordInput id="confirm_password" autoComplete="new-password" invalid={!!errors.confirm_password} {...register('confirm_password')} />
           </Field>
           <Button type="submit" loading={changePassword.isPending}>Save password</Button>
         </form>

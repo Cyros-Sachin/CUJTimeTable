@@ -13,6 +13,7 @@ import { Field } from '@/components/ui/Field';
 import { Input } from '@/components/ui/Input';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { MasterImportCard } from '@/components/MasterImportCard';
 import { Chip } from '@/components/ui/Chip';
 
 interface FormValues { code: string; name: string }
@@ -70,6 +71,7 @@ export default function DepartmentsAdminPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      <MasterImportCard resource="departments" label="departments" />
       <div className="flex justify-end">
         <Button onClick={openCreate}><Plus size={16} className="mr-1" /> Add department</Button>
       </div>

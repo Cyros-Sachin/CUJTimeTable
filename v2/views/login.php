@@ -48,7 +48,9 @@
 
     document.getElementById('togglePassword').addEventListener('click', () => {
       const input = document.getElementById('password');
-      input.type = input.type === 'password' ? 'text' : 'password';
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      document.querySelector('#togglePassword i').className = show ? 'bi bi-eye-slash' : 'bi bi-eye';
     });
 
     form.addEventListener('submit', async (e) => {

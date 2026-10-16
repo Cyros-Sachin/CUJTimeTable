@@ -10,7 +10,7 @@ const REQUIRED_HEADERS = ['Program', 'Semester', 'Subject Type', 'Date', 'Time S
 const COURSE_CODE_REGEX = /^[A-Z0-9][A-Z0-9\-_/ ]{2,29}$/;
 const MAX_ROWS = 1000;
 
-function cellToText(cell) {
+export function cellToText(cell) {
   const v = cell?.value;
   if (v == null) return '';
   if (typeof v === 'object' && Array.isArray(v.richText)) return v.richText.map((t) => t.text).join('');
@@ -31,7 +31,7 @@ function cellToIsoDate(cell) {
   return null;
 }
 
-async function loadWorkbook(file) {
+export async function loadWorkbook(file) {
   const workbook = new ExcelJS.Workbook();
   const isCsv = /\.csv$/i.test(file.originalname) || file.mimetype === 'text/csv';
   if (isCsv) {
@@ -70,8 +70,10 @@ export async function parseAndValidateUpload({ file, examCycleId, examType, depa
     throw httpError(403, 'CYCLE_LOCKED', 'This exam cycle is locked');
   }
 
-  const programByName = new Map(programs.filter((p) => p.department_id === departmentId).map((p) => [p.name.toLowerCase(), p]));
-  const programByCode = new Map(programs.filter((p) => p.department_id === departmentId).map((p) => [p.code.toLowerCase(), p]));
+  // Every program is looked up; a program outside the allowed department is rejected per row.
+  // departmentId is null only for the exam cell with no department chosen (all programs allowed).
+  const programByName = new Map(programs.map((p) => [p.name.toLowerCase(), p]));
+  const programByCode = new Map(programs.map((p) => [p.code.toLowerCase(), p]));
   const slotByLabel = new Map(timeSlots.map((t) => [t.label.toLowerCase(), t]));
   const stypeByName = new Map(subjectTypes.map((s) => [s.name.toLowerCase(), s]));
 
@@ -83,7 +85,8 @@ export async function parseAndValidateUpload({ file, examCycleId, examType, depa
   let rowCount = 0;
   for (let r = 2; r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
-    if (row.cellCount === 0 || !row.values || row.values.every((v) => v == null || v === '')) continue;
+    // Column A (Program) is pre-filled on every template row, so it does not make a row "used".
+    if (row.cellCount === 0 || !row.values || row.values.slice(2).every((v) => v == null || v === '')) continue;
     rowCount += 1;
     if (rowCount > MAX_ROWS) {
       errors.push({ row: r, field: 'file', message: `Too many rows (max ${MAX_ROWS})` });
@@ -107,7 +110,10 @@ export async function parseAndValidateUpload({ file, examCycleId, examType, depa
 
     const rowErr = (field, message) => errors.push({ row: r, field, message });
 
-    if (!program) rowErr('program', `Unknown program "${programText}" for this department`);
+    if (!program) rowErr('program', `Unknown program "${programText}"`);
+    else if (departmentId && program.department_id !== departmentId) {
+      rowErr('program', `Program "${program.name}" belongs to another department and cannot be uploaded here`);
+    }
     if (!Number.isInteger(semester) || semester < 1 || (program && semester > program.total_semesters)) {
       rowErr('semester', `Semester must be between 1 and ${program ? program.total_semesters : '?'}`);
     }
@@ -131,7 +137,7 @@ export async function parseAndValidateUpload({ file, examCycleId, examType, depa
     }
 
     rows.push({
-      row: r, program_id: program?.id, program_name: program?.name, semester, subject_type_id: subjectType?.id,
+      row: r, department_id: program?.department_id, program_id: program?.id, program_name: program?.name, semester, subject_type_id: subjectType?.id,
       exam_date: isoDate, time_slot_id: slot?.id, time_slot_label: slot?.label, course_code: courseCode,
       course_name: courseName, student_count: studentCount,
     });
@@ -161,7 +167,7 @@ export async function insertUpload({ rows, examCycleId, examType, departmentId, 
            exam_date, course_code, course_name, student_count, created_by)
          VALUES (:cycle, :dept, :prog, :sem, :type, :stype, :slot, :date, :code, :name, :students, :by)`,
         {
-          cycle: examCycleId, dept: departmentId, prog: row.program_id, sem: row.semester, type: examType,
+          cycle: examCycleId, dept: row.department_id, prog: row.program_id, sem: row.semester, type: examType,
           stype: row.subject_type_id, slot: row.time_slot_id, date: row.exam_date, code: row.course_code,
           name: row.course_name, students: row.student_count, by: user.id,
         },

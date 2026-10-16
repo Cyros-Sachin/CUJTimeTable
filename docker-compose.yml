@@ -52,6 +52,11 @@ services:
       TZ: Asia/Kolkata
     ports:
       - "${APP_PORT:-8080}:3000"
+  mailpit:
+    image: axllent/mailpit:v1.21
+    profiles: ["tools"]
+    ports:
+      - "8025:8025"
   phpmyadmin:
     image: phpmyadmin:5
     profiles: ["tools"]

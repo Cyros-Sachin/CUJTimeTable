@@ -20,18 +20,27 @@
     <form id="cpForm" novalidate>
       <div class="mb-3">
         <label class="form-label" for="current_password">Current password</label>
-        <input type="password" class="form-control" id="current_password" name="current_password" autocomplete="current-password" required />
+        <div class="input-group">
+          <input type="password" class="form-control" id="current_password" name="current_password" autocomplete="current-password" required />
+          <button class="btn btn-outline-secondary toggle-pw" type="button" data-target="current_password" aria-label="Show or hide password"><i class="bi bi-eye"></i></button>
+        </div>
         <div class="invalid-text" data-error-for="current_password"></div>
       </div>
       <div class="mb-3">
         <label class="form-label" for="new_password">New password</label>
-        <input type="password" class="form-control" id="new_password" name="new_password" autocomplete="new-password" required />
+        <div class="input-group">
+          <input type="password" class="form-control" id="new_password" name="new_password" autocomplete="new-password" required />
+          <button class="btn btn-outline-secondary toggle-pw" type="button" data-target="new_password" aria-label="Show or hide password"><i class="bi bi-eye"></i></button>
+        </div>
         <div class="form-text">At least 10 characters with a letter and a digit.</div>
         <div class="invalid-text" data-error-for="new_password"></div>
       </div>
       <div class="mb-3">
         <label class="form-label" for="confirm_password">Confirm new password</label>
-        <input type="password" class="form-control" id="confirm_password" name="confirm_password" autocomplete="new-password" required />
+        <div class="input-group">
+          <input type="password" class="form-control" id="confirm_password" name="confirm_password" autocomplete="new-password" required />
+          <button class="btn btn-outline-secondary toggle-pw" type="button" data-target="confirm_password" aria-label="Show or hide password"><i class="bi bi-eye"></i></button>
+        </div>
         <div class="invalid-text" data-error-for="confirm_password"></div>
       </div>
       <button type="submit" class="btn btn-primary w-100" id="cpSubmit">Save password</button>
@@ -41,6 +50,13 @@
   <script type="module">
     import { apiSend, ApiError } from '/assets/js/api.js';
     import { clearFieldErrors, fieldErrorsFrom, setLoading, toast } from '/assets/js/ui.js';
+
+    document.querySelectorAll('.toggle-pw').forEach((btn) => btn.addEventListener('click', () => {
+      const input = document.getElementById(btn.dataset.target);
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.querySelector('i').className = show ? 'bi bi-eye-slash' : 'bi bi-eye';
+    }));
 
     const form = document.getElementById('cpForm');
     const submitBtn = document.getElementById('cpSubmit');

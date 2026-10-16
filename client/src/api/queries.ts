@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiSend, apiUpload, buildQuery } from './client';
 import type {
   AcademicSession, AdminUser, AuditLogRow, DashboardStats, DatesheetGroup, DayWiseSummaryRow,
-  Department, EntryInput, ExamCycle, ExamEntry, ExamType, MetaResponse, Paged, Program, SubjectType, TimeSlot, User,
+  Department, EntryInput, ExamCycle, ExamEntry, ExamType, MetaResponse, Paged, Program, TimeSlot, User,
 } from './types';
 
 // ---- Auth -----------------------------------------------------------------
@@ -194,7 +194,6 @@ function adminCrud<T extends { id: number }>(resource: string) {
 
 export const departmentsApi = adminCrud<Department>('departments');
 export const programsApi = adminCrud<Program>('programs');
-export const subjectTypesApi = adminCrud<SubjectType>('subject-types');
 export const timeSlotsApi = adminCrud<TimeSlot>('time-slots');
 export const sessionsApi = adminCrud<AcademicSession>('sessions');
 export const cyclesApi = adminCrud<ExamCycle>('cycles');
@@ -236,7 +235,7 @@ export function useUpdateUser() {
 
 export function useResetPassword() {
   return useMutation({
-    mutationFn: (id: number) => apiSend<{ data: { temp_password: string } }>('POST', `/admin/users/${id}/reset-password`),
+    mutationFn: (id: number) => apiSend<{ data: { temp_password: string; email: string; email_sent: boolean; email_error: string | null } }>('POST', `/admin/users/${id}/reset-password`),
   });
 }
 

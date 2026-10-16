@@ -132,7 +132,7 @@ function DateSheetPageInner() {
         <DataTable columns={columns} rows={entries.data?.data || []} rowKey={(e) => e.id} emptyMessage="No entries yet for this selection." />
       )}
 
-      <UploadCard cycleId={cycleId} examType={examType} departmentId={user?.role === 'EXAM_CELL' ? departmentId : undefined} />
+      <UploadCard cycleId={cycleId} examType={examType} departmentId={user?.role === 'EXAM_CELL' ? departmentId : undefined} programId={programId} programName={programs.find((p) => p.id === programId)?.name} />
 
       <div className="rounded border border-border bg-white p-4 shadow-subtle">
         <h3 className="mb-3 text-sm font-semibold text-text">Date sheets by program & semester</h3>

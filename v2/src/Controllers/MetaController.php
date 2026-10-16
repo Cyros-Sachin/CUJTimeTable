@@ -27,13 +27,16 @@ class MetaController
             $programStmt = $pdo->query('SELECT id, code, name, department_id, total_semesters FROM programs WHERE is_active = 1 ORDER BY name');
         }
 
+        // Locked cycles are hidden from every dropdown (admins unlock them on the Sessions & Cycles page).
+        $cycleWhere = "WHERE status <> 'LOCKED'";
+
         Response::json([
             'departments' => $deptStmt->fetchAll(),
             'programs' => $programStmt->fetchAll(),
             'subject_types' => $pdo->query('SELECT id, name FROM subject_types WHERE is_active = 1 ORDER BY id')->fetchAll(),
             'time_slots' => $pdo->query('SELECT id, label, start_time, end_time FROM time_slots WHERE is_active = 1 ORDER BY start_time')->fetchAll(),
             'sessions' => $pdo->query('SELECT id, label, is_current FROM academic_sessions ORDER BY label DESC')->fetchAll(),
-            'cycles' => $pdo->query('SELECT id, academic_session_id, title, month_year, start_date, end_date, status FROM exam_cycles ORDER BY start_date DESC')->fetchAll(),
+            'cycles' => $pdo->query('SELECT id, academic_session_id, title, month_year, start_date, end_date, status FROM exam_cycles ' . $cycleWhere . ' ORDER BY start_date DESC')->fetchAll(),
         ]);
     }
 }

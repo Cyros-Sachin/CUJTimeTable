@@ -69,7 +69,7 @@ $title = 'DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cycleMonthYea
       ?>
       <tr>
         <td class="center"><?= $sno ?></td>
-        <td class="center"><?= e(ddmmyyyy($row['exam_date'])) ?> (<?= e(weekday_of($row['exam_date'])) ?>)</td>
+        <td class="center"><?= e(ddmmyyyy($row['exam_date'])) ?><br />(<?= e(weekday_of($row['exam_date'])) ?>)</td>
         <td class="center"><?= e($row['time_slot_label']) ?></td>
         <td><?= e($row['department_name']) ?></td>
         <td><?= e($row['program_name']) ?></td>

@@ -89,7 +89,10 @@ entriesRouter.post('/', validateBody(entrySchema), async (req, res, next) => {
 entriesRouter.get('/template', async (req, res, next) => {
   try {
     const examType = req.query.exam_type === 'REAPPEAR' ? 'REAPPEAR' : 'REGULAR';
-    const workbook = await buildTemplateWorkbook(examType);
+    const cycleId = Number(req.query.exam_cycle_id) || null;
+    const departmentId = req.user.role === 'DEPT_COORDINATOR' ? req.user.departmentId : (Number(req.query.department_id) || null);
+    const programId = Number(req.query.program_id) || null;
+    const workbook = await buildTemplateWorkbook({ examType, cycleId, departmentId, programId });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="Entry_Template_${examType}.xlsx"`);
     await workbook.xlsx.write(res);
@@ -117,7 +120,6 @@ entriesRouter.post('/bulk-upload', (req, res, next) => {
     if (!req.file) throw httpError(422, 'UPLOAD_INVALID', 'No file uploaded', { rows: [] });
     const body = bulkUploadBodySchema.parse(req.body);
     const departmentId = req.user.role === 'DEPT_COORDINATOR' ? req.user.departmentId : body.department_id;
-    if (!departmentId) throw httpError(422, 'VALIDATION', 'department_id is required', { department_id: 'Required' });
 
     const { rows, errors } = await parseAndValidateUpload({
       file: req.file, examCycleId: body.exam_cycle_id, examType: body.exam_type, departmentId, user: req.user,

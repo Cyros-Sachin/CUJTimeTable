@@ -4,8 +4,7 @@
   </div>
   <div class="d-flex gap-2">
     <a href="#" id="exportExcel" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Export Excel</a>
-    <a href="#" id="exportPdf" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i>Overall PDF</a>
-    <a href="#" id="exportZip" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark-zip me-1"></i>Download all PDFs</a>
+    <a href="#" id="exportZip" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i>Download all PDFs</a>
   </div>
 </div>
 

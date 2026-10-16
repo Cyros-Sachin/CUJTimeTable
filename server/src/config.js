@@ -19,5 +19,15 @@ export const config = {
   },
   seedDemoUsers: bool(process.env.SEED_DEMO_USERS, true),
   refSeqStart: Number(process.env.REF_SEQ_START || 3000),
+  appUrl: process.env.APP_URL || `http://localhost:${process.env.APP_PORT || 8080}`,
+  smtp: {
+    host: process.env.SMTP_HOST || '',
+    port: Number(process.env.SMTP_PORT || 587),
+    // none | starttls | ssl
+    secure: (process.env.SMTP_SECURE || 'starttls').toLowerCase(),
+    user: process.env.SMTP_USER || '',
+    password: process.env.SMTP_PASSWORD || '',
+    from: process.env.MAIL_FROM || 'CUJ Exam Cell <no-reply@cuj.local>',
+  },
   storageDir: process.env.STORAGE_DIR || '/app/storage',
 };

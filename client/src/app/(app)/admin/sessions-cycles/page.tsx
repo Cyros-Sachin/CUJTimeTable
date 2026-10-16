@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
-import { Plus, Lock, Unlock } from 'lucide-react';
+import { Plus, Lock, Unlock, Pencil } from 'lucide-react';
 import { sessionsApi, cyclesApi, useSetCycleStatus } from '@/api/queries';
 import type { AcademicSession, ExamCycle } from '@/api/types';
 import { Button } from '@/components/ui/Button';
@@ -22,20 +22,41 @@ interface CycleForm { academic_session_id: number; title: string; month_year: st
 export default function SessionsCyclesAdminPage() {
   const sessions = sessionsApi.useList();
   const createSession = sessionsApi.useCreate();
+  const updateSession = sessionsApi.useUpdate();
   const cycles = cyclesApi.useList();
   const createCycle = cyclesApi.useCreate();
+  const updateCycle = cyclesApi.useUpdate();
   const setStatus = useSetCycleStatus();
 
   const [sessionModal, setSessionModal] = useState(false);
   const [cycleModal, setCycleModal] = useState(false);
+  const [editingSession, setEditingSession] = useState<AcademicSession | null>(null);
+  const [editingCycle, setEditingCycle] = useState<ExamCycle | null>(null);
 
   const sessionForm = useForm<SessionForm>({ defaultValues: { label: '', is_current: false } });
   const cycleForm = useForm<CycleForm>({ defaultValues: { title: 'End Semester Examination', month_year: '', start_date: '', end_date: '' } });
 
+  function openSessionEdit(session: AcademicSession) {
+    setEditingSession(session);
+    sessionForm.reset({ label: session.label, is_current: !!session.is_current });
+    setSessionModal(true);
+  }
+
+  function openCycleEdit(cycle: ExamCycle) {
+    setEditingCycle(cycle);
+    cycleForm.reset({
+      academic_session_id: cycle.academic_session_id, title: cycle.title, month_year: cycle.month_year,
+      start_date: cycle.start_date.slice(0, 10), end_date: cycle.end_date.slice(0, 10),
+    });
+    setCycleModal(true);
+  }
+
   async function onCreateSession(values: SessionForm) {
     try {
-      await createSession.mutateAsync({ ...values, is_current: !!values.is_current } as any);
-      toast.success('Session created');
+      const body = { ...values, is_current: !!values.is_current } as any;
+      if (editingSession) await updateSession.mutateAsync({ id: editingSession.id, body });
+      else await createSession.mutateAsync(body);
+      toast.success(editingSession ? 'Session updated' : 'Session created');
       setSessionModal(false);
     } catch (err: any) {
       toast.error(err?.message || 'Could not save session');
@@ -44,8 +65,10 @@ export default function SessionsCyclesAdminPage() {
 
   async function onCreateCycle(values: CycleForm) {
     try {
-      await createCycle.mutateAsync({ ...values, academic_session_id: Number(values.academic_session_id) } as any);
-      toast.success('Exam cycle created');
+      const body = { ...values, academic_session_id: Number(values.academic_session_id) } as any;
+      if (editingCycle) await updateCycle.mutateAsync({ id: editingCycle.id, body });
+      else await createCycle.mutateAsync(body);
+      toast.success(editingCycle ? 'Exam cycle updated' : 'Exam cycle created');
       setCycleModal(false);
     } catch (err: any) {
       toast.error(err?.message || 'Could not save cycle');
@@ -64,6 +87,11 @@ export default function SessionsCyclesAdminPage() {
   const sessionColumns: Column<AcademicSession>[] = [
     { key: 'label', header: 'Session', render: (s) => s.label },
     { key: 'current', header: 'Current', render: (s) => (s.is_current ? <Chip kind="open">Current</Chip> : null) },
+    {
+      key: 'actions', header: '', render: (s) => (
+        <button type="button" onClick={() => openSessionEdit(s)} className="text-muted hover:text-primary" aria-label="Edit session"><Pencil size={16} /></button>
+      ),
+    },
   ];
 
   const cycleColumns: Column<ExamCycle>[] = [
@@ -73,9 +101,12 @@ export default function SessionsCyclesAdminPage() {
     { key: 'status', header: 'Status', render: (c) => (c.status === 'LOCKED' ? <Chip kind="locked">Locked</Chip> : <Chip kind="open">Open</Chip>) },
     {
       key: 'actions', header: '', render: (c) => (
-        <Button variant="secondary" onClick={() => toggleStatus(c)} loading={setStatus.isPending}>
-          {c.status === 'OPEN' ? <><Lock size={14} className="mr-1" /> Lock</> : <><Unlock size={14} className="mr-1" /> Unlock</>}
-        </Button>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => openCycleEdit(c)} className="text-muted hover:text-primary" aria-label="Edit cycle"><Pencil size={16} /></button>
+          <Button variant="secondary" onClick={() => toggleStatus(c)} loading={setStatus.isPending}>
+            {c.status === 'OPEN' ? <><Lock size={14} className="mr-1" /> Lock</> : <><Unlock size={14} className="mr-1" /> Unlock</>}
+          </Button>
+        </div>
       ),
     },
   ];
@@ -85,7 +116,7 @@ export default function SessionsCyclesAdminPage() {
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-text">Academic sessions</h2>
-          <Button onClick={() => { sessionForm.reset({ label: '', is_current: false }); setSessionModal(true); }}>
+          <Button onClick={() => { setEditingSession(null); sessionForm.reset({ label: '', is_current: false }); setSessionModal(true); }}>
             <Plus size={16} className="mr-1" /> Add session
           </Button>
         </div>
@@ -97,7 +128,7 @@ export default function SessionsCyclesAdminPage() {
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-text">Exam cycles</h2>
-          <Button onClick={() => { cycleForm.reset({ title: 'End Semester Examination', month_year: '', start_date: '', end_date: '' }); setCycleModal(true); }}>
+          <Button onClick={() => { setEditingCycle(null); cycleForm.reset({ title: 'End Semester Examination', month_year: '', start_date: '', end_date: '' }); setCycleModal(true); }}>
             <Plus size={16} className="mr-1" /> Add cycle
           </Button>
         </div>
@@ -106,7 +137,7 @@ export default function SessionsCyclesAdminPage() {
         )}
       </section>
 
-      <Modal open={sessionModal} onClose={() => setSessionModal(false)} title="Add academic session">
+      <Modal open={sessionModal} onClose={() => setSessionModal(false)} title={editingSession ? 'Edit academic session' : 'Add academic session'}>
         <form onSubmit={sessionForm.handleSubmit(onCreateSession)} noValidate className="flex flex-col gap-4">
           <Field label="Label" error={sessionForm.formState.errors.label?.message} htmlFor="s-label" hint="e.g. 2026-27">
             <Input id="s-label" {...sessionForm.register('label', { required: 'Required' })} />
@@ -116,12 +147,12 @@ export default function SessionsCyclesAdminPage() {
           </label>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setSessionModal(false)}>Cancel</Button>
-            <Button type="submit" loading={createSession.isPending}>Save</Button>
+            <Button type="submit" loading={createSession.isPending || updateSession.isPending}>Save</Button>
           </div>
         </form>
       </Modal>
 
-      <Modal open={cycleModal} onClose={() => setCycleModal(false)} title="Add exam cycle">
+      <Modal open={cycleModal} onClose={() => setCycleModal(false)} title={editingCycle ? 'Edit exam cycle' : 'Add exam cycle'}>
         <form onSubmit={cycleForm.handleSubmit(onCreateCycle)} noValidate className="flex flex-col gap-4">
           <Field label="Academic session" error={cycleForm.formState.errors.academic_session_id?.message} htmlFor="c-session">
             <Select id="c-session" {...cycleForm.register('academic_session_id', { required: 'Required' })}>
@@ -143,7 +174,7 @@ export default function SessionsCyclesAdminPage() {
           </Field>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setCycleModal(false)}>Cancel</Button>
-            <Button type="submit" loading={createCycle.isPending}>Save</Button>
+            <Button type="submit" loading={createCycle.isPending || updateCycle.isPending}>Save</Button>
           </div>
         </form>
       </Modal>

@@ -31,8 +31,22 @@ const DEMO_DEPARTMENTS = [
   { code: 'CSIT', email: 'coordinator.csit@cuj.local', name: 'CSIT Coordinator' },
 ];
 
+// Subject types are restricted to Core / Elective. Idempotent: safe on every boot,
+// and migrates databases created with the older 8-type seed.
+export async function normalizeSubjectTypes() {
+  await pool.query("INSERT IGNORE INTO subject_types (name) VALUES ('Core'), ('Elective')");
+  await pool.query("UPDATE subject_types SET is_active = 1 WHERE name IN ('Core', 'Elective')");
+  const [[elective]] = await pool.query("SELECT id FROM subject_types WHERE name = 'Elective'");
+  await pool.execute(
+    "UPDATE exam_entries SET subject_type_id = :id WHERE subject_type_id NOT IN (SELECT id FROM subject_types WHERE name IN ('Core', 'Elective'))",
+    { id: elective.id },
+  );
+  await pool.query("DELETE FROM subject_types WHERE name NOT IN ('Core', 'Elective')");
+}
+
 export async function runSeed() {
   await getJwtSecret();
+  await normalizeSubjectTypes();
 
   const [[{ count }]] = await pool.query('SELECT COUNT(*) AS count FROM users');
   if (count > 0) {

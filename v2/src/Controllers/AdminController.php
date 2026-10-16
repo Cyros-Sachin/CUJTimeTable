@@ -11,6 +11,8 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Core\Validator;
 use App\Services\AuditService;
+use App\Services\Mailer;
+use App\Services\MasterImportService;
 
 class AdminController
 {
@@ -29,8 +31,25 @@ class AdminController
     public function listDepartments(Request $request): void
     {
         $this->user();
-        $rows = Db::conn()->query('SELECT * FROM departments ORDER BY name')->fetchAll();
+        $rows = Db::conn()->query('SELECT * FROM departments WHERE is_active = 1 ORDER BY name')->fetchAll();
         Response::json($rows);
+    }
+
+    public function departmentsTemplate(Request $request): void
+    {
+        $this->user();
+        self::sendSpreadsheet(MasterImportService::departmentsTemplate(), 'Departments_Template.xlsx');
+    }
+
+    public function importDepartments(Request $request): void
+    {
+        $this->user();
+        $dryRun = (string) $request->input('dry_run', 'false') === 'true';
+        $result = MasterImportService::importDepartments($_FILES['file'] ?? [], $dryRun);
+        if (!$dryRun) {
+            $this->audit('ADMIN_BULK_IMPORT', 'departments', null, ['inserted' => $result['inserted'], 'skipped' => $result['skipped']], $request);
+        }
+        Response::json($result, $dryRun ? 200 : 201);
     }
 
     public function createDepartment(Request $request): void
@@ -60,9 +79,9 @@ class AdminController
     {
         $this->user();
         $id = (int) $params['id'];
-        $inUse = self::count('SELECT COUNT(*) AS c FROM programs WHERE department_id = :id', ['id' => $id]);
+        $inUse = self::count('SELECT (SELECT COUNT(*) FROM programs WHERE department_id = :a) + (SELECT COUNT(*) FROM users WHERE department_id = :b) + (SELECT COUNT(*) FROM exam_entries WHERE department_id = :c) AS c', ['a' => $id, 'b' => $id, 'c' => $id]);
         if ($inUse > 0) {
-            self::runUpdate('departments', $id, ['is_active' => false]);
+            self::runUpdate('departments', $id, ['is_active' => 0]);
         } else {
             $stmt = Db::conn()->prepare('DELETE FROM departments WHERE id = :id');
             $stmt->execute(['id' => $id]);
@@ -75,8 +94,25 @@ class AdminController
     public function listPrograms(Request $request): void
     {
         $this->user();
-        $rows = Db::conn()->query('SELECT p.*, d.name AS department_name FROM programs p JOIN departments d ON d.id = p.department_id ORDER BY d.name, p.name')->fetchAll();
+        $rows = Db::conn()->query('SELECT p.*, d.name AS department_name FROM programs p JOIN departments d ON d.id = p.department_id WHERE p.is_active = 1 AND d.is_active = 1 ORDER BY d.name, p.name')->fetchAll();
         Response::json($rows);
+    }
+
+    public function programsTemplate(Request $request): void
+    {
+        $this->user();
+        self::sendSpreadsheet(MasterImportService::programsTemplate(), 'Programs_Template.xlsx');
+    }
+
+    public function importPrograms(Request $request): void
+    {
+        $this->user();
+        $dryRun = (string) $request->input('dry_run', 'false') === 'true';
+        $result = MasterImportService::importPrograms($_FILES['file'] ?? [], $dryRun);
+        if (!$dryRun) {
+            $this->audit('ADMIN_BULK_IMPORT', 'programs', null, ['inserted' => $result['inserted'], 'skipped' => $result['skipped']], $request);
+        }
+        Response::json($result, $dryRun ? 200 : 201);
     }
 
     public function createProgram(Request $request): void
@@ -114,9 +150,9 @@ class AdminController
     {
         $this->user();
         $id = (int) $params['id'];
-        $inUse = self::count('SELECT COUNT(*) AS c FROM exam_entries WHERE program_id = :id', ['id' => $id]);
+        $inUse = self::count('SELECT (SELECT COUNT(*) FROM exam_entries WHERE program_id = :a) + (SELECT COUNT(*) FROM datesheet_refs WHERE program_id = :b) AS c', ['a' => $id, 'b' => $id]);
         if ($inUse > 0) {
-            self::runUpdate('programs', $id, ['is_active' => false]);
+            self::runUpdate('programs', $id, ['is_active' => 0]);
         } else {
             $stmt = Db::conn()->prepare('DELETE FROM programs WHERE id = :id');
             $stmt->execute(['id' => $id]);
@@ -125,49 +161,11 @@ class AdminController
         Response::json(['ok' => true]);
     }
 
-    // ---- Subject types --------------------------------------------------
+    // ---- Subject types (fixed to Core / Elective; read-only) -------------
     public function listSubjectTypes(Request $request): void
     {
         $this->user();
         Response::json(Db::conn()->query('SELECT * FROM subject_types ORDER BY id')->fetchAll());
-    }
-
-    public function createSubjectType(Request $request): void
-    {
-        $this->user();
-        $data = Validator::validate($request->all(), ['name' => ['required', 'string', 'max:100']]);
-        $stmt = Db::conn()->prepare('INSERT INTO subject_types (name) VALUES (:name)');
-        $stmt->execute($data);
-        $id = (int) Db::conn()->lastInsertId();
-        $this->audit('ADMIN_CREATE', 'subject_types', (string) $id, $data, $request);
-        Response::json(['id' => $id] + $data, 201);
-    }
-
-    public function updateSubjectType(Request $request, array $params): void
-    {
-        $this->user();
-        $data = Validator::validate($request->all(), ['name' => ['string', 'max:100'], 'is_active' => ['bool']]);
-        if (!$data) {
-            throw new HttpException(400, 'BAD_REQUEST', 'No fields to update');
-        }
-        self::runUpdate('subject_types', (int) $params['id'], $data);
-        $this->audit('ADMIN_UPDATE', 'subject_types', $params['id'], $data, $request);
-        Response::json(['ok' => true]);
-    }
-
-    public function deleteSubjectType(Request $request, array $params): void
-    {
-        $this->user();
-        $id = (int) $params['id'];
-        $inUse = self::count('SELECT COUNT(*) AS c FROM exam_entries WHERE subject_type_id = :id', ['id' => $id]);
-        if ($inUse > 0) {
-            self::runUpdate('subject_types', $id, ['is_active' => false]);
-        } else {
-            $stmt = Db::conn()->prepare('DELETE FROM subject_types WHERE id = :id');
-            $stmt->execute(['id' => $id]);
-        }
-        $this->audit('ADMIN_DELETE', 'subject_types', $params['id'], null, $request);
-        Response::json(['ok' => true]);
     }
 
     // ---- Time slots -------------------------------------------------------
@@ -181,10 +179,10 @@ class AdminController
     {
         $this->user();
         $data = Validator::validate($request->all(), [
-            'label' => ['required', 'string', 'max:30'],
             'start_time' => ['required', 'string'],
             'end_time' => ['required', 'string'],
         ]);
+        $data['label'] = self::slotLabel($data['start_time'], $data['end_time']);
         $stmt = Db::conn()->prepare('INSERT INTO time_slots (label, start_time, end_time) VALUES (:label, :start_time, :end_time)');
         $stmt->execute($data);
         $id = (int) Db::conn()->lastInsertId();
@@ -199,6 +197,12 @@ class AdminController
         if (!$data) {
             throw new HttpException(400, 'BAD_REQUEST', 'No fields to update');
         }
+        if (isset($data['start_time']) || isset($data['end_time'])) {
+            $stmt = Db::conn()->prepare('SELECT start_time, end_time FROM time_slots WHERE id = :id');
+            $stmt->execute(['id' => (int) $params['id']]);
+            $cur = $stmt->fetch() ?: throw new HttpException(404, 'NOT_FOUND', 'Time slot not found');
+            $data['label'] = self::slotLabel($data['start_time'] ?? $cur['start_time'], $data['end_time'] ?? $cur['end_time']);
+        }
         self::runUpdate('time_slots', (int) $params['id'], $data);
         $this->audit('ADMIN_UPDATE', 'time_slots', $params['id'], $data, $request);
         Response::json(['ok' => true]);
@@ -210,7 +214,7 @@ class AdminController
         $id = (int) $params['id'];
         $inUse = self::count('SELECT COUNT(*) AS c FROM exam_entries WHERE time_slot_id = :id', ['id' => $id]);
         if ($inUse > 0) {
-            self::runUpdate('time_slots', $id, ['is_active' => false]);
+            self::runUpdate('time_slots', $id, ['is_active' => 0]);
         } else {
             $stmt = Db::conn()->prepare('DELETE FROM time_slots WHERE id = :id');
             $stmt->execute(['id' => $id]);
@@ -314,6 +318,19 @@ class AdminController
         if (!$data) {
             throw new HttpException(400, 'BAD_REQUEST', 'No fields to update');
         }
+        if (isset($data['start_date']) || isset($data['end_date'])) {
+            $stmt = Db::conn()->prepare('SELECT start_date, end_date FROM exam_cycles WHERE id = :id');
+            $stmt->execute(['id' => $params['id']]);
+            $current = $stmt->fetch();
+            if (!$current) {
+                throw new HttpException(404, 'NOT_FOUND', 'Exam cycle not found');
+            }
+            $start = $data['start_date'] ?? $current['start_date'];
+            $end = $data['end_date'] ?? $current['end_date'];
+            if ($end < $start) {
+                throw new HttpException(422, 'VALIDATION', 'end_date must be on or after start_date', ['end_date' => 'Must be after start date']);
+            }
+        }
         self::runUpdate('exam_cycles', (int) $params['id'], $data);
         $this->audit('ADMIN_UPDATE', 'exam_cycles', $params['id'], $data, $request);
         Response::json(['ok' => true]);
@@ -339,6 +356,36 @@ class AdminController
             FROM users u LEFT JOIN departments d ON d.id = u.department_id ORDER BY u.role, u.name
         ')->fetchAll();
         Response::json($rows);
+    }
+
+    public function usersTemplate(Request $request): void
+    {
+        $this->user();
+        self::sendSpreadsheet(MasterImportService::coordinatorsTemplate(), 'Coordinators_Template.xlsx');
+    }
+
+    public function importUsers(Request $request): void
+    {
+        $this->user();
+        $dryRun = (string) $request->input('dry_run', 'false') === 'true';
+        $result = MasterImportService::importCoordinators(
+            $_FILES['file'] ?? [],
+            $dryRun,
+            fn () => self::randomPassword(),
+            fn (string $p) => Auth::hashPassword($p)
+        );
+        $emailed = 0;
+        foreach ($result['created'] as &$c) {
+            $msg = Mailer::passwordResetMessage($c['email'], $c['name'], $c['department'], $c['temp_password']);
+            $c['email_sent'] = Mailer::send($c['email'], $msg['subject'], $msg['text'], $msg['html'])['sent'];
+            $emailed += $c['email_sent'] ? 1 : 0;
+        }
+        unset($c);
+        $result['emailed'] = $emailed;
+        if (!$dryRun) {
+            $this->audit('ADMIN_BULK_IMPORT', 'users', null, ['inserted' => $result['inserted'], 'skipped' => $result['skipped'], 'emailed' => $emailed], $request);
+        }
+        Response::json($result, $dryRun ? 200 : 201);
     }
 
     public function createUser(Request $request): void
@@ -382,12 +429,31 @@ class AdminController
     public function resetUserPassword(Request $request, array $params): void
     {
         $this->user();
+        $stmt = Db::conn()->prepare(
+            "SELECT u.id, u.name, u.email, d.name AS department_name FROM users u
+             LEFT JOIN departments d ON d.id = u.department_id WHERE u.id = :id AND u.role = 'DEPT_COORDINATOR'"
+        );
+        $stmt->execute(['id' => $params['id']]);
+        $target = $stmt->fetch();
+        if (!$target) {
+            throw new HttpException(404, 'NOT_FOUND', 'Coordinator not found');
+        }
+
         $tempPassword = self::randomPassword();
         $hash = Auth::hashPassword($tempPassword);
-        $stmt = Db::conn()->prepare('UPDATE users SET password_hash = :hash, must_change_password = 1 WHERE id = :id');
-        $stmt->execute(['hash' => $hash, 'id' => $params['id']]);
-        $this->audit('ADMIN_RESET_PASSWORD', 'users', $params['id'], null, $request);
-        Response::json(['temp_password' => $tempPassword]);
+        $upd = Db::conn()->prepare('UPDATE users SET password_hash = :hash, must_change_password = 1 WHERE id = :id');
+        $upd->execute(['hash' => $hash, 'id' => $target['id']]);
+
+        $msg = Mailer::passwordResetMessage($target['email'], $target['name'], $target['department_name'], $tempPassword);
+        $mail = Mailer::send($target['email'], $msg['subject'], $msg['text'], $msg['html']);
+
+        $this->audit('ADMIN_RESET_PASSWORD', 'users', $params['id'], ['email_sent' => $mail['sent']], $request);
+        Response::json([
+            'temp_password' => $tempPassword,
+            'email' => $target['email'],
+            'email_sent' => $mail['sent'],
+            'email_error' => $mail['error'],
+        ]);
     }
 
     private static function randomPassword(): string
@@ -480,11 +546,38 @@ class AdminController
         Response::json($rows, 200, ['total' => $total, 'page' => $page, 'page_size' => $pageSize]);
     }
 
+    private static function sendSpreadsheet(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet, string $filename): never
+    {
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        $writer->save('php://output');
+        exit;
+    }
+
     private static function runUpdate(string $table, int $id, array $data): void
     {
         $sets = implode(', ', array_map(fn ($f) => "{$f} = :{$f}", array_keys($data)));
         $stmt = Db::conn()->prepare("UPDATE {$table} SET {$sets} WHERE id = :id");
+        // PDO binds false as '', which MySQL rejects for TINYINT columns.
+        $data = array_map(fn ($v) => is_bool($v) ? (int) $v : $v, $data);
         $stmt->execute($data + ['id' => $id]);
+    }
+
+    /** "14:00" + "17:00" => "2:00PM-5:00PM" */
+    private static function slotLabel(string $start, string $end): string
+    {
+        $fmt = static function (string $t): string {
+            $d = \DateTimeImmutable::createFromFormat('!H:i', substr($t, 0, 5));
+            if (!$d) {
+                throw new HttpException(422, 'VALIDATION', 'Invalid time', ['time' => 'Use HH:MM']);
+            }
+            return $d->format('g:iA');
+        };
+        return $fmt($start) . '-' . $fmt($end);
     }
 
     private static function count(string $sql, array $params): int

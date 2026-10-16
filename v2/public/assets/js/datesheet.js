@@ -191,7 +191,7 @@ function previewPdf(g) {
 function setupUpload() {
   document.getElementById('templateLink').addEventListener('click', (e) => {
     e.preventDefault();
-    window.location.href = `/api/entries/template?exam_type=${state.exam_type}`;
+    window.location.href = `/api/entries/template${buildQuery({ exam_type: state.exam_type, exam_cycle_id: state.cycle_id, department_id: user.role === 'EXAM_CELL' ? state.department_id : undefined, program_id: state.program_id })}`;
   });
 
   const drop = document.getElementById('uploadDrop');

@@ -37,12 +37,67 @@ class ExcelService
         return $clean === '' ? 'Sheet' : $clean;
     }
 
-    public static function buildTemplateWorkbook(string $examType): Spreadsheet
+    /**
+     * Entry upload template. Every choice column (Program, Semester, Subject Type,
+     * Date, Time Slot) is a dropdown fed from live data: the programs of the given
+     * department, the semesters those programs have, Core/Elective, the exam cycle's
+     * date window and the active time slots. Dates are plain DD-MM-YYYY text so the
+     * dropdown value is never re-interpreted by Excel's locale.
+     */
+    public static function buildTemplateWorkbook(string $examType, ?int $cycleId = null, ?int $departmentId = null, ?int $programId = null): Spreadsheet
     {
         $pdo = Db::conn();
-        $programs = $pdo->query('SELECT name FROM programs WHERE is_active = 1 ORDER BY name')->fetchAll();
+
+        $sql = 'SELECT p.name, p.total_semesters, d.name AS department_name
+                  FROM programs p JOIN departments d ON d.id = p.department_id
+                 WHERE p.is_active = 1';
+        $args = [];
+        if ($departmentId) {
+            $sql .= ' AND p.department_id = :d';
+            $args['d'] = $departmentId;
+        }
+        if ($programId) {
+            $sql .= ' AND p.id = :p';
+            $args['p'] = $programId;
+        }
+        $stmt = $pdo->prepare($sql . ' ORDER BY d.name, p.name');
+        $stmt->execute($args);
+        $programs = $stmt->fetchAll();
+
+        // Every active department is listed (in scope), even one that has no programs yet.
+        $deptSql = 'SELECT name FROM departments WHERE is_active = 1' . ($departmentId ? ' AND id = :d' : '') . ' ORDER BY name';
+        $stmt = $pdo->prepare($deptSql);
+        $stmt->execute($departmentId ? ['d' => $departmentId] : []);
+        $byDept = [];
+        foreach ($stmt->fetchAll() as $d) {
+            $byDept[$d['name']] = [];
+        }
+        foreach ($programs as $p) {
+            $byDept[$p['department_name']][] = $p;
+        }
+        $deptNames = array_keys($byDept);
+        // Same layout as the admin template: nothing pre-filled, the dropdowns only offer this scope's data.
+        $deptName = ($departmentId && count($deptNames) === 1) ? $deptNames[0] : null;
+
         $timeSlots = $pdo->query('SELECT label FROM time_slots WHERE is_active = 1 ORDER BY start_time')->fetchAll();
         $subjectTypes = $pdo->query('SELECT name FROM subject_types WHERE is_active = 1 ORDER BY id')->fetchAll();
+
+        $cycle = null;
+        $dates = [];
+        if ($cycleId) {
+            $stmt = $pdo->prepare('SELECT title, month_year, start_date, end_date FROM exam_cycles WHERE id = :id');
+            $stmt->execute(['id' => $cycleId]);
+            $cycle = $stmt->fetch() ?: null;
+        }
+        if ($cycle) {
+            $cursor = new \DateTimeImmutable($cycle['start_date']);
+            $end = new \DateTimeImmutable($cycle['end_date']);
+            while ($cursor <= $end && count($dates) < 400) {
+                $dates[] = $cursor->format('d-m-Y');
+                $cursor = $cursor->modify('+1 day');
+            }
+        }
+        $maxSemester = max(1, ...array_map(fn ($p) => (int) $p['total_semesters'], $programs ?: [['total_semesters' => 1]]));
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -50,61 +105,119 @@ class ExcelService
         $listsSheet = $spreadsheet->createSheet();
         $listsSheet->setTitle('Lists');
         $listsSheet->setSheetState(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::SHEETSTATE_HIDDEN);
+        $guide = $spreadsheet->createSheet();
+        $guide->setTitle('Instructions');
 
-        foreach ($programs as $i => $p) {
-            $listsSheet->setCellValue('A' . ($i + 1), $p['name']);
+        // Lists sheet layout:
+        //  A dept name | B first row of its programs in G | C its program count
+        //  G program name (grouped by department) | H program's semester count
+        //  K subject types | L time slots | M dates | N semester numbers 1..max
+        $row = 1;
+        foreach ($byDept as $name => $progs) {
+            $i = array_search($name, $deptNames, true) + 1;
+            $listsSheet->setCellValue("A{$i}", $name);
+            // A department with no programs points at the blank row after the block, so its Program list is empty.
+            $listsSheet->setCellValue("B{$i}", $progs ? $row : max(count($programs), 0) + 1);
+            $listsSheet->setCellValue("C{$i}", max(count($progs), 1));
+            foreach ($progs as $p) {
+                $listsSheet->setCellValue("G{$row}", $p['name']);
+                $listsSheet->setCellValue("H{$row}", (int) $p['total_semesters']);
+                $row++;
+            }
         }
         foreach ($subjectTypes as $i => $s) {
-            $listsSheet->setCellValue('B' . ($i + 1), $s['name']);
+            $listsSheet->setCellValue('K' . ($i + 1), $s['name']);
         }
         foreach ($timeSlots as $i => $t) {
-            $listsSheet->setCellValue('C' . ($i + 1), $t['label']);
+            $listsSheet->setCellValue('L' . ($i + 1), $t['label']);
+        }
+        foreach ($dates as $i => $d) {
+            $listsSheet->setCellValueExplicit('M' . ($i + 1), $d, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+        }
+        for ($n = 1; $n <= $maxSemester; $n++) {
+            $listsSheet->setCellValue('N' . $n, $n);
         }
 
-        $headers = ['Program', 'Semester', 'Subject Type', 'Date', 'Time Slot', 'Course Code', 'Course Name', 'No. of Students'];
+        $headers = ['Department', 'Program', 'Semester', 'Subject Type', 'Date', 'Time Slot', 'Course Code', 'Course Name', 'No. of Students'];
         foreach ($headers as $i => $h) {
             $sheet->setCellValue([$i + 1, 1], $h);
-            $sheet->getColumnDimensionByColumn($i + 1)->setWidth(22);
+            $sheet->getColumnDimensionByColumn($i + 1)->setWidth($h === 'Course Name' ? 36 : 22);
         }
-        self::styleHeaderRow($sheet, 'A1:H1');
+        self::styleHeaderRow($sheet, 'A1:I1');
+        $sheet->freezePane('A2');
 
-        $sampleProgram = $programs[0]['name'] ?? 'M.Sc. Biotechnology';
-        $sampleSubject = $subjectTypes[0]['name'] ?? 'Core';
-        $sampleSlot = $timeSlots[0]['label'] ?? '2:00PM-5:00PM';
-        $sheet->setCellValue('A2', $sampleProgram);
-        $sheet->setCellValue('B2', 2);
-        $sheet->setCellValue('C2', $sampleSubject);
-        $sheet->setCellValue('D2', ExcelDate::PHPToExcel(new \DateTime()));
-        $sheet->getStyle('D2')->getNumberFormat()->setFormatCode('dd-mm-yyyy');
-        $sheet->setCellValue('E2', $sampleSlot);
-        $sheet->setCellValue('F2', 'MBIO1C004T');
-        $sheet->setCellValue('G2', 'Sample Course (' . ($examType === 'REAPPEAR' ? 'Re-appear' : 'Regular') . ')');
-        $sheet->setCellValue('H2', 60);
+        $deptCount = max(count($deptNames), 1);
+        $progCount = max(count($programs), 1);
+        $lists = [
+            'A' => ['range' => "Lists!\$A\$1:\$A\${$deptCount}", 'title' => 'Department'],
+            'B' => ['title' => 'Program'],
+            'C' => ['title' => 'Semester'],
+            'D' => ['range' => 'Lists!$K$1:$K$' . max(count($subjectTypes), 1), 'title' => 'Subject Type'],
+            'E' => ['range' => 'Lists!$M$1:$M$' . max(count($dates), 1), 'title' => 'Date'],
+            'F' => ['range' => 'Lists!$L$1:$L$' . max(count($timeSlots), 1), 'title' => 'Time Slot'],
+        ];
 
-        $programCount = max(count($programs), 1);
-        $subjectCount = max(count($subjectTypes), 1);
-        $slotCount = max(count($timeSlots), 1);
-
-        for ($row = 2; $row <= 1001; $row++) {
-            $dv = $sheet->getCell("A{$row}")->getDataValidation();
-            $dv->setType(DataValidation::TYPE_LIST);
+        $sheet->getStyle('E2:E1001')->getNumberFormat()->setFormatCode('@');
+        for ($r = 2; $r <= 1001; $r++) {
+            foreach ($lists as $col => $def) {
+                $dv = $sheet->getCell("{$col}{$r}")->getDataValidation();
+                $dv->setType(DataValidation::TYPE_LIST);
+                $dv->setErrorStyle(DataValidation::STYLE_STOP);
+                $dv->setAllowBlank(true);
+                $dv->setShowDropDown(true); // PhpSpreadsheet inverts this: true = arrow visible
+                $dv->setShowErrorMessage(true);
+                $dv->setErrorTitle($def['title']);
+                $dv->setError('Pick a value from the dropdown list.');
+                if ($col === 'B') {
+                    // Programs follow the department on the same row.
+                    $dv->setError('Pick the Department first, then a program from the dropdown.');
+                    $dv->setFormula1("OFFSET(Lists!\$G\$1,INDEX(Lists!\$B\$1:\$B\${$deptCount},MATCH(\$A{$r},Lists!\$A\$1:\$A\${$deptCount},0))-1,0,INDEX(Lists!\$C\$1:\$C\${$deptCount},MATCH(\$A{$r},Lists!\$A\$1:\$A\${$deptCount},0)),1)");
+                } elseif ($col === 'C') {
+                    // Semester choices follow the program on the same row.
+                    $dv->setError('Pick the Program first, then a semester from the dropdown.');
+                    $dv->setFormula1("OFFSET(Lists!\$N\$1,0,0,INDEX(Lists!\$H\$1:\$H\${$progCount},MATCH(\$B{$r},Lists!\$G\$1:\$G\${$progCount},0)),1)");
+                } else {
+                    $dv->setFormula1($def['range']);
+                }
+            }
+            $dv = $sheet->getCell("I{$r}")->getDataValidation();
+            $dv->setType(DataValidation::TYPE_WHOLE);
+            $dv->setOperator(DataValidation::OPERATOR_BETWEEN);
             $dv->setAllowBlank(true);
-            $dv->setFormula1("Lists!\$A\$1:\$A\${$programCount}");
-
-            $dv = $sheet->getCell("C{$row}")->getDataValidation();
-            $dv->setType(DataValidation::TYPE_LIST);
-            $dv->setAllowBlank(true);
-            $dv->setFormula1("Lists!\$B\$1:\$B\${$subjectCount}");
-
-            $dv = $sheet->getCell("E{$row}")->getDataValidation();
-            $dv->setType(DataValidation::TYPE_LIST);
-            $dv->setAllowBlank(true);
-            $dv->setFormula1("Lists!\$C\$1:\$C\${$slotCount}");
+            $dv->setShowErrorMessage(true);
+            $dv->setErrorTitle('No. of Students');
+            $dv->setError('Enter a whole number between 1 and 5000.');
+            $dv->setFormula1('1');
+            $dv->setFormula2('5000');
         }
+        self::borderRange($sheet, 'A1:I1');
 
-        self::borderRange($sheet, 'A1:H2');
+        $guide->getColumnDimension('A')->setWidth(110);
+        $cycleLine = $cycle
+            ? "{$cycle['title']} - {$cycle['month_year']} ({$dates[0]} to " . end($dates) . ')'
+            : 'not specified';
+        $lines = [
+            'Exam cycle: ' . $cycleLine,
+            'Department: ' . ($deptName ?? 'all departments'),
+            'Program: pick from the dropdown (lists the programs of the department chosen on the same row)',
+            'Exam type: ' . ($examType === 'REAPPEAR' ? 'Re-appear' : 'Regular'),
+            '',
+            'Fill one exam per row from row 2 downward.',
+            'Department, Program, Semester, Subject Type, Date and Time Slot are dropdowns - pick the value, do not type it.',
+            'Program choices depend on the Department, and Semester choices on the Program, of the same row. Only Course Code, Course Name and No. of Students are typed.',
+            'Rows with a program from another department are rejected on upload.',
+            'Date list contains only the dates of the selected exam cycle.',
+            'Course Code: letters/digits, e.g. MBIO1C004T. Course Name: 2-200 characters.',
+            'No. of Students: whole number 1-5000.',
+            'Do not rename or reorder the header row. Max 1000 rows. Upload the file under the same exam type and cycle.',
+            'Download a fresh template if departments, programs, time slots or the cycle dates change.',
+        ];
+        foreach ($lines as $i => $line) {
+            $guide->setCellValue('A' . ($i + 1), $line);
+        }
+        $guide->getStyle('A1')->getFont()->setBold(true);
+
         $spreadsheet->setActiveSheetIndex(0);
-
         return $spreadsheet;
     }
 

@@ -9,7 +9,6 @@ const TABS = [
   { href: '/admin/departments', label: 'Departments' },
   { href: '/admin/programs', label: 'Programs' },
   { href: '/admin/time-slots', label: 'Time Slots' },
-  { href: '/admin/subject-types', label: 'Subject Types' },
   { href: '/admin/sessions-cycles', label: 'Sessions & Cycles' },
   { href: '/admin/users', label: 'Users' },
   { href: '/admin/branding', label: 'Letterhead & Signature' },

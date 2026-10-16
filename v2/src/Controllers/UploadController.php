@@ -17,10 +17,15 @@ class UploadController
 {
     public function template(Request $request): void
     {
-        Auth::requireLogin();
+        $user = Auth::requireLogin();
         $examType = ($request->queryParam('exam_type') === 'REAPPEAR') ? 'REAPPEAR' : 'REGULAR';
 
-        $spreadsheet = ExcelService::buildTemplateWorkbook($examType);
+        $cycleId = (int) $request->queryParam('exam_cycle_id', 0) ?: null;
+        $departmentId = $user['role'] === 'DEPT_COORDINATOR'
+            ? (int) $user['department_id']
+            : ((int) $request->queryParam('department_id', 0) ?: null);
+
+        $spreadsheet = ExcelService::buildTemplateWorkbook($examType, $cycleId, $departmentId, (int) $request->queryParam('program_id', 0) ?: null);
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
 
         while (ob_get_level() > 0) {
@@ -44,9 +49,6 @@ class UploadController
         $bodyDepartmentId = $request->input('department_id');
 
         $departmentId = $user['role'] === 'DEPT_COORDINATOR' ? (int) $user['department_id'] : ($bodyDepartmentId ? (int) $bodyDepartmentId : null);
-        if (!$departmentId) {
-            throw new HttpException(422, 'VALIDATION', 'department_id is required', ['department_id' => 'Required']);
-        }
 
         if (empty($_FILES['file'])) {
             throw new HttpException(422, 'UPLOAD_INVALID', 'No file uploaded', ['rows' => []]);

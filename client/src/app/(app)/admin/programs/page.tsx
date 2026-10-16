@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { MasterImportCard } from '@/components/MasterImportCard';
 
 interface FormValues { department_id: number; code: string; name: string; total_semesters: number }
 
@@ -73,6 +74,7 @@ export default function ProgramsAdminPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      <MasterImportCard resource="programs" label="programs" />
       <div className="flex justify-end">
         <Button onClick={openCreate}><Plus size={16} className="mr-1" /> Add program</Button>
       </div>

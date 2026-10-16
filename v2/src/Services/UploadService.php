@@ -12,7 +12,7 @@ use PhpOffice\PhpSpreadsheet\Cell\Cell;
 
 class UploadService
 {
-    private const REQUIRED_HEADERS = ['Program', 'Semester', 'Subject Type', 'Date', 'Time Slot', 'Course Code', 'Course Name', 'No. of Students'];
+    private const REQUIRED_HEADERS = ['Department', 'Program', 'Semester', 'Subject Type', 'Date', 'Time Slot', 'Course Code', 'Course Name', 'No. of Students'];
     private const COURSE_CODE_REGEX = '/^[A-Z0-9][A-Z0-9\-_\/ ]{2,29}$/';
     private const MAX_ROWS = 1000;
     private const MAX_SIZE = 5 * 1024 * 1024;
@@ -39,6 +39,11 @@ class UploadService
         if ($text === '') {
             return null;
         }
+        // The workbook is read with setReadDataOnly(true), which drops cell styles, so a real
+        // Excel date arrives as a bare serial number (e.g. 46150) and isDateTime() is false.
+        if (preg_match('/^\d{5}(\.\d+)?$/', $text) && (float) $text > 20000 && (float) $text < 80000) {
+            return ExcelDate::excelToDateTimeObject((float) $text)->format('Y-m-d');
+        }
         if (preg_match('/^\d{2}-\d{2}-\d{4}$/', $text)) {
             $dt = \DateTime::createFromFormat('!d-m-Y', $text);
             $errors = \DateTime::getLastErrors();
@@ -60,7 +65,7 @@ class UploadService
      * @param array{tmp_name:string,name:string,size:int,type:string,error:int} $file
      * @return array{rows:array,errors:array,cycle:array}
      */
-    public static function parseAndValidateUpload(array $file, int $examCycleId, string $examType, int $departmentId, array $user): array
+    public static function parseAndValidateUpload(array $file, int $examCycleId, string $examType, ?int $departmentId, array $user): array
     {
         if ($file['error'] !== UPLOAD_ERR_OK) {
             throw new HttpException(422, 'UPLOAD_INVALID', 'File upload failed', ['rows' => []]);
@@ -112,7 +117,7 @@ class UploadService
 
         $sheet = $spreadsheet->getSheet(0);
         $highestRow = $sheet->getHighestDataRow();
-        $highestCol = 8;
+        $highestCol = 9;
 
         $headerCells = [];
         for ($c = 1; $c <= $highestCol; $c++) {
@@ -133,6 +138,10 @@ class UploadService
 
         $pdo = Db::conn();
         $programs = $pdo->query('SELECT id, code, name, department_id, total_semesters FROM programs WHERE is_active = 1')->fetchAll();
+        $deptNameById = [];
+        foreach ($pdo->query('SELECT id, name FROM departments')->fetchAll() as $d) {
+            $deptNameById[(int) $d['id']] = $d['name'];
+        }
         $timeSlots = $pdo->query('SELECT id, label FROM time_slots WHERE is_active = 1')->fetchAll();
         $subjectTypes = $pdo->query('SELECT id, name FROM subject_types WHERE is_active = 1')->fetchAll();
         $cycleStmt = $pdo->prepare('SELECT id, start_date, end_date, status FROM exam_cycles WHERE id = :id');
@@ -148,10 +157,10 @@ class UploadService
         $programByName = [];
         $programByCode = [];
         foreach ($programs as $p) {
-            if ((int) $p['department_id'] === $departmentId) {
-                $programByName[mb_strtolower($p['name'])] = $p;
-                $programByCode[mb_strtolower($p['code'])] = $p;
-            }
+            // Every program is looked up; one outside the allowed department is rejected per row.
+            // $departmentId is null only for the exam cell with no department chosen.
+            $programByName[mb_strtolower($p['name'])] = $p;
+            $programByCode[mb_strtolower($p['code'])] = $p;
         }
         $slotByLabel = [];
         foreach ($timeSlots as $t) {
@@ -174,7 +183,8 @@ class UploadService
             for ($c = 1; $c <= $highestCol; $c++) {
                 $v = self::cellText($sheet->getCell([$c, $r]));
                 $rowValues[] = $v;
-                if ($v !== '') {
+                // Columns A-B (Department, Program) can be pre-filled on every template row, so they do not make a row "used".
+                if ($v !== '' && $c > 2) {
                     $isEmpty = false;
                 }
             }
@@ -188,8 +198,8 @@ class UploadService
                 break;
             }
 
-            [$programText, $semesterText, $subjectTypeText, , $slotText, $courseCodeRaw, $courseName, $studentsText] = $rowValues;
-            $isoDate = self::cellIsoDate($sheet->getCell([4, $r]));
+            [$departmentText, $programText, $semesterText, $subjectTypeText, , $slotText, $courseCodeRaw, $courseName, $studentsText] = $rowValues;
+            $isoDate = self::cellIsoDate($sheet->getCell([5, $r]));
             $courseCode = mb_strtoupper(trim($courseCodeRaw));
 
             $program = $programByName[mb_strtolower($programText)] ?? $programByCode[mb_strtolower($programText)] ?? null;
@@ -200,7 +210,13 @@ class UploadService
 
             $rowErrors = [];
             if (!$program) {
-                $rowErrors[] = ['field' => 'program', 'message' => "Unknown program \"{$programText}\" for this department"];
+                $rowErrors[] = ['field' => 'program', 'message' => "Unknown program \"{$programText}\""];
+            } elseif ($departmentId && (int) $program['department_id'] !== $departmentId) {
+                $rowErrors[] = ['field' => 'program', 'message' => "Program \"{$program['name']}\" belongs to another department and cannot be uploaded here"];
+            }
+            if ($program && $departmentText !== '' && isset($deptNameById[(int) $program['department_id']])
+                && mb_strtolower($deptNameById[(int) $program['department_id']]) !== mb_strtolower($departmentText)) {
+                $rowErrors[] = ['field' => 'department', 'message' => "Program \"{$program['name']}\" does not belong to department \"{$departmentText}\""];
             }
             if ($semester === null || $semester < 1 || ($program && $semester > (int) $program['total_semesters'])) {
                 $max = $program ? $program['total_semesters'] : '?';
@@ -248,7 +264,7 @@ class UploadService
             }
 
             $rows[] = [
-                'row' => $r, 'program_id' => $program['id'] ?? null, 'program_name' => $program['name'] ?? null,
+                'row' => $r, 'department_id' => isset($program['department_id']) ? (int) $program['department_id'] : null, 'program_id' => $program['id'] ?? null, 'program_name' => $program['name'] ?? null,
                 'semester' => $semester, 'subject_type_id' => $subjectType['id'] ?? null,
                 'exam_date' => $isoDate, 'time_slot_id' => $slot['id'] ?? null, 'time_slot_label' => $slot['label'] ?? null,
                 'course_code' => $courseCode, 'course_name' => $courseName, 'student_count' => $studentCount,
@@ -262,7 +278,7 @@ class UploadService
         return ['rows' => $rows, 'errors' => $errors, 'cycle' => $cycle];
     }
 
-    public static function insertUpload(array $rows, int $examCycleId, string $examType, int $departmentId, array $user, ?string $ip): array
+    public static function insertUpload(array $rows, int $examCycleId, string $examType, ?int $departmentId, array $user, ?string $ip): array
     {
         return Db::transaction(function ($pdo) use ($rows, $examCycleId, $examType, $departmentId, $user, $ip) {
             $inserted = [];
@@ -277,7 +293,7 @@ class UploadService
                      VALUES (:cycle, :dept, :prog, :sem, :type, :stype, :slot, :dt, :code, :name, :students, :by)'
                 );
                 $stmt->execute([
-                    'cycle' => $examCycleId, 'dept' => $departmentId, 'prog' => $row['program_id'], 'sem' => $row['semester'],
+                    'cycle' => $examCycleId, 'dept' => $row['department_id'], 'prog' => $row['program_id'], 'sem' => $row['semester'],
                     'type' => $examType, 'stype' => $row['subject_type_id'], 'slot' => $row['time_slot_id'], 'dt' => $row['exam_date'],
                     'code' => $row['course_code'], 'name' => $row['course_name'], 'students' => $row['student_count'], 'by' => $user['id'],
                 ]);

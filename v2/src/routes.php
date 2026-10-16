@@ -63,19 +63,20 @@ $router->get('/api/consolidated', [ConsolidatedController::class, 'index']);
 
 // ---- Admin: master data (EXAM_CELL) --------------------------------------
 $router->get('/api/admin/departments', [AdminController::class, 'listDepartments']);
+$router->get('/api/admin/departments/template', [AdminController::class, 'departmentsTemplate']);
+$router->post('/api/admin/departments/import', [AdminController::class, 'importDepartments']);
 $router->post('/api/admin/departments', [AdminController::class, 'createDepartment']);
 $router->put('/api/admin/departments/{id}', [AdminController::class, 'updateDepartment']);
 $router->delete('/api/admin/departments/{id}', [AdminController::class, 'deleteDepartment']);
 
 $router->get('/api/admin/programs', [AdminController::class, 'listPrograms']);
+$router->get('/api/admin/programs/template', [AdminController::class, 'programsTemplate']);
+$router->post('/api/admin/programs/import', [AdminController::class, 'importPrograms']);
 $router->post('/api/admin/programs', [AdminController::class, 'createProgram']);
 $router->put('/api/admin/programs/{id}', [AdminController::class, 'updateProgram']);
 $router->delete('/api/admin/programs/{id}', [AdminController::class, 'deleteProgram']);
 
 $router->get('/api/admin/subject-types', [AdminController::class, 'listSubjectTypes']);
-$router->post('/api/admin/subject-types', [AdminController::class, 'createSubjectType']);
-$router->put('/api/admin/subject-types/{id}', [AdminController::class, 'updateSubjectType']);
-$router->delete('/api/admin/subject-types/{id}', [AdminController::class, 'deleteSubjectType']);
 
 $router->get('/api/admin/time-slots', [AdminController::class, 'listTimeSlots']);
 $router->post('/api/admin/time-slots', [AdminController::class, 'createTimeSlot']);
@@ -93,6 +94,8 @@ $router->put('/api/admin/cycles/{id}', [AdminController::class, 'updateCycle']);
 $router->patch('/api/admin/cycles/{id}/status', [AdminController::class, 'setCycleStatus']);
 
 $router->get('/api/admin/users', [AdminController::class, 'listUsers']);
+$router->get('/api/admin/users/template', [AdminController::class, 'usersTemplate']);
+$router->post('/api/admin/users/import', [AdminController::class, 'importUsers']);
 $router->post('/api/admin/users', [AdminController::class, 'createUser']);
 $router->put('/api/admin/users/{id}', [AdminController::class, 'updateUser']);
 $router->post('/api/admin/users/{id}/reset-password', [AdminController::class, 'resetUserPassword']);

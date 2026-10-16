@@ -24,7 +24,15 @@ class Response
         header('Content-Type: application/json; charset=utf-8');
         $error = ['code' => $e->errorCode, 'message' => $e->getMessage()];
         if ($e->fields !== null) {
-            $error['fields'] = $e->fields;
+            // Upload validation passes its per-row errors as fields['rows']; the JS reads them from error.rows.
+            $fields = $e->fields;
+            if (isset($fields['rows']) && is_array($fields['rows'])) {
+                $error['rows'] = $fields['rows'];
+                unset($fields['rows']);
+            }
+            if ($fields) {
+                $error['fields'] = $fields;
+            }
         }
         echo json_encode(['error' => $error], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;

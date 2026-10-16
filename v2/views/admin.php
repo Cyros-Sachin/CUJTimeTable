@@ -4,7 +4,6 @@ $tabs = [
     'departments' => 'Departments',
     'programs' => 'Programs',
     'time-slots' => 'Time Slots',
-    'subject-types' => 'Subject Types',
     'sessions-cycles' => 'Sessions & Cycles',
     'users' => 'Users',
     'branding' => 'Letterhead & Signature',

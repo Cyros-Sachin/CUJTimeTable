@@ -63,6 +63,15 @@ forced to change it on first login.
 | `SEED_DEMO_USERS` | `true` | Seed one demo coordinator per seeded department |
 | `REF_SEQ_START` | `3000` | Starting sequence number for `CUJ/Exam/Datesheet/<year>/<seq>` reference numbers |
 
+## Password-reset emails
+
+The admin's **Reset password** button generates a new temporary password and emails it to the
+coordinator (the dialog still shows it, with a show/hide eye and copy button, as a fallback).
+Set the `SMTP_*` / `MAIL_FROM` / `APP_URL` variables in `.env` to enable sending; with `SMTP_HOST`
+empty the reset still works but no email goes out. To try it locally:
+`docker compose --profile tools up -d mailpit`, set `SMTP_HOST=mailpit`, `SMTP_PORT=1025`,
+`SMTP_SECURE=none`, and open the inbox at http://localhost:8025.
+
 ## Common operations
 
 **Back up the database:**

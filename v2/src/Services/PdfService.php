@@ -72,11 +72,30 @@ class PdfService
         ]);
     }
 
-    public static function renderDatesheetPdf(array $params): string
+    /** @param array[] $paramsList each as accepted by renderDatesheetPdf(); one datesheet per page group. */
+    public static function renderCombinedDatesheetPdf(array $paramsList): string
     {
         $settings = self::settings();
+        $mpdf = self::newMpdf('A4');
+        foreach ($paramsList as $i => $params) {
+            if ($i > 0) {
+                $mpdf->AddPage();
+            }
+            $mpdf->WriteHTML(self::datesheetHtml($params, $settings));
+        }
+        return $mpdf->Output('', 'S');
+    }
 
-        $html = View::renderPartial('pdf/datesheet', [
+    public static function renderDatesheetPdf(array $params): string
+    {
+        $mpdf = self::newMpdf('A4');
+        $mpdf->WriteHTML(self::datesheetHtml($params, self::settings()));
+        return $mpdf->Output('', 'S');
+    }
+
+    private static function datesheetHtml(array $params, array $settings): string
+    {
+        return View::renderPartial('pdf/datesheet', [
             'logoDataUri' => self::fileToDataUri($settings['logoPath']),
             'signatureDataUri' => self::fileToDataUri($settings['signaturePath']),
             'controllerName' => $settings['controllerName'],
@@ -91,10 +110,6 @@ class PdfService
             'examType' => $params['examType'],
             'rows' => $params['rows'],
         ]);
-
-        $mpdf = self::newMpdf('A4');
-        $mpdf->WriteHTML($html);
-        return $mpdf->Output('', 'S');
     }
 
     public static function renderOverallPdf(array $params): string

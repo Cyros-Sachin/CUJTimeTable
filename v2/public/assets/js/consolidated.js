@@ -37,7 +37,6 @@ function filtersForExport() {
 function updateExportLinks() {
   const f = buildQuery(filtersForExport());
   document.getElementById('exportExcel').href = `/api/consolidated/excel${f}`;
-  document.getElementById('exportPdf').href = `/api/consolidated/pdf${f}`;
   document.getElementById('exportZip').href = `/api/consolidated/zip${f}`;
 }
 

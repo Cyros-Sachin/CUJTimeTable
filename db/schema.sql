@@ -140,9 +140,7 @@ CREATE TABLE IF NOT EXISTS settings (
 ) ENGINE=InnoDB;
 
 -- Seed data (idempotent) -----------------------------------------------------
-INSERT IGNORE INTO subject_types (name) VALUES
- ('Core'),('Discipline Specific Elective'),('Generic Elective'),('Open Elective'),
- ('Skill Enhancement'),('Ability Enhancement'),('Value Added'),('Project/Dissertation');
+INSERT IGNORE INTO subject_types (name) VALUES ('Core'),('Elective');
 INSERT IGNORE INTO time_slots (label,start_time,end_time) VALUES
  ('10:00AM-1:00PM','10:00:00','13:00:00'),('2:00PM-5:00PM','14:00:00','17:00:00');
 INSERT IGNORE INTO academic_sessions (label,is_current) VALUES ('2025-26',1);

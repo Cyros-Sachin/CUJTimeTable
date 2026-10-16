@@ -35,6 +35,11 @@ services:
       - "${APP_PORT:-8090}:80"
     volumes:
       - app_storage:/var/www/html/storage
+  mailpit:
+    image: axllent/mailpit:v1.21
+    profiles: ["tools"]
+    ports:
+      - "8026:8025"
   phpmyadmin:
     image: phpmyadmin:5
     profiles: ["tools"]
