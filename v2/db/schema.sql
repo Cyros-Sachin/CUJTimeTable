@@ -143,17 +143,10 @@ CREATE TABLE IF NOT EXISTS settings (
 INSERT IGNORE INTO subject_types (name) VALUES ('Core'),('Elective');
 INSERT IGNORE INTO time_slots (label,start_time,end_time) VALUES
  ('10:00AM-1:00PM','10:00:00','13:00:00'),('2:00PM-5:00PM','14:00:00','17:00:00');
-INSERT IGNORE INTO academic_sessions (label,is_current) VALUES ('2025-26',1);
-INSERT IGNORE INTO departments (code,name) VALUES
- ('CMB','Centre for Molecular Biology'),
- ('CSIT','Department of Computer Science and Information Technology');
-INSERT IGNORE INTO programs (department_id,code,name,total_semesters)
- SELECT id,'MSC-BT','M.Sc. Biotechnology',4 FROM departments WHERE code='CMB';
-INSERT IGNORE INTO programs (department_id,code,name,total_semesters)
- SELECT id,'BTECH-CS','B.Tech Computer Science',8 FROM departments WHERE code='CSIT';
+INSERT IGNORE INTO academic_sessions (label,is_current) VALUES ('2026-27',1);
 INSERT IGNORE INTO exam_cycles (academic_session_id,title,month_year,start_date,end_date)
  SELECT id,'End Semester Examination','May, 2026','2026-05-01','2026-05-31'
- FROM academic_sessions WHERE label='2025-26';
+ FROM academic_sessions WHERE label='2026-27';
 INSERT IGNORE INTO settings (k,v) VALUES
  ('controller_title','Controller of Examinations'),('controller_name',''),
  ('signature_path',''),('logo_path','');

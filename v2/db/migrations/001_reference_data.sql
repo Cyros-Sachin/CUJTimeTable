@@ -7,36 +7,31 @@
 
 -- Departments ----------------------------------------------------------------
 INSERT IGNORE INTO departments (code, name, is_active) VALUES
- ('CMB', 'Centre for Molecular Biology', 0),
- ('CSIT', 'Department of Computer Science and Information Technology', 1),
- ('PHY', 'Department of Physics & Astronomical Sciences', 1),
- ('CHE', 'Department of Chemistry & Chemical Sciences', 1),
- ('BOT', 'Department of Botany', 1),
- ('ZOOL', 'Department of Zoology', 1),
- ('CSE', 'Department of Computer Science & Engineering', 1),
- ('ECE', 'Department of Electronics & Communication Engineering', 1),
- ('EVS', 'Department of Environmental Sciences', 1),
- ('MATH', 'Department of Mathematics', 1),
- ('ECO', 'Department of Economics', 1),
- ('ENG', 'Department of English', 1),
- ('HND', 'Department of Hindi & Other Indian Languages', 1),
- ('EDU', 'Department of Educational Studies', 1),
- ('TTM', 'Department of Tourism & Travel Management', 1),
- ('MSCM', 'Department of Marketing & Supply Chain Management', 1),
- ('MCNM', 'Department of Mass Communication & New Media', 1),
- ('PPPA', 'Department of Public Policy & Public Administration', 1),
- ('SW', 'Department of Social Work', 1),
- ('NSS', 'Department of National Security Studies', 1),
- ('HRM', 'Department of Human Resource Management', 1),
- ('MOLB', 'Centre for Molecular Biotechnology', 1),
- ('CCRC', 'Centre for Comparative Religion & Civilizations', 1);
-
--- Programs (total_semesters = number of semesters offered) --------------------
-INSERT IGNORE INTO programs (department_id, code, name, total_semesters, is_active)
- SELECT id, 'MSC-BT', 'M.Sc. Biotechnology', 4, 1 FROM departments WHERE code='CMB';
-INSERT IGNORE INTO programs (department_id, code, name, total_semesters, is_active)
- SELECT id, 'BTECH-CS', 'B.Tech Computer Science', 8, 1 FROM departments WHERE code='CSIT';
-
+    ('CCRC', 'Centre for Comparitive Religion and Civilization', 1),
+    ('CMB', 'Centre for Molecular Biology', 1),
+    ('CC', 'Community College', 1),
+    ('ECE', 'Department Electronics and Communication Engineering', 1),
+    ('BOT', 'Department of Botany', 1),
+    ('CHE', 'Department of Chemistry and Chemical Sciences', 1),
+    ('CSE', 'Department of Computer Science and Engineering', 1),
+    ('CSIT', 'Department of Computer Science and Information Technology', 1),
+    ('ECO', 'Department of Economics', 1),
+    ('EDU', 'Department of Educational Studies', 1),
+    ('ENG', 'Department of English', 1),
+    ('EVS', 'Department of Environmental Sciences', 1),
+    ('HND', 'Department of Hindi & Other Indian Languages', 1),
+    ('HRM', 'Department of Human Resource Management & Organizational Behaviour', 1),
+    ('MSCM', 'Department of Marketing and Supply Chain Management', 1),
+    ('MCNM', 'Department of Mass Communication and New Media', 1),
+    ('MST', 'Department of Material Science & Technology', 1),
+    ('MATH', 'Department of Mathematics', 1),
+    ('NSS', 'Department of National Security Studies', 1),
+    ('PHY', 'Department of Physics and Astronomical Sciences', 1),
+    ('PPPA', 'Department of Public Policy and Public Administration', 1),
+    ('SW', 'Department of Social work', 1),
+    ('TTM', 'Department of Tourism and Travel Management', 1),
+    ('ZOOL', 'Department of Zoology', 1);
+    
 -- Time slots ----------------------------------------------------------------
 INSERT IGNORE INTO time_slots (label, start_time, end_time, is_active) VALUES
  ('10:00AM-1:00PM', '10:00:00', '13:00:00', 1),
