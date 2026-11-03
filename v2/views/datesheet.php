@@ -8,6 +8,8 @@
   </div>
 </div>
 
+<div id="lockBanner" class="alert d-none mb-4" role="status"></div>
+
 <div class="row g-3 mb-4" id="filterRow">
   <div class="col-sm-4 d-none" id="deptFilterWrap">
     <label class="form-label">Department</label>
@@ -27,7 +29,7 @@
   <div class="table-scroll" id="entriesTableWrap"><div class="skeleton" style="height:200px"></div></div>
 </div>
 
-<div class="card-surface p-4 mb-4">
+<div class="card-surface p-4 mb-4" id="uploadCard">
   <div class="d-flex align-items-center justify-content-between mb-3">
     <h3 class="h6 fw-semibold mb-0">Table upload</h3>
     <a href="#" id="templateLink" class="small"><i class="bi bi-download me-1"></i>Download template</a>

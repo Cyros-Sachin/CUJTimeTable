@@ -150,8 +150,8 @@ class UploadService
         if (!$cycle) {
             throw new HttpException(422, 'VALIDATION', 'Unknown exam cycle', ['exam_cycle_id' => 'Cycle not found']);
         }
-        if ($cycle['status'] === 'LOCKED' && $user['role'] === 'DEPT_COORDINATOR') {
-            throw new HttpException(403, 'CYCLE_LOCKED', 'This exam cycle is locked');
+        if ($user['role'] === 'DEPT_COORDINATOR') {
+            CycleAccessService::assertCanEdit($pdo, $user, $examCycleId, (int) $user['department_id']);
         }
 
         $programByName = [];

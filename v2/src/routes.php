@@ -92,6 +92,9 @@ $router->get('/api/admin/cycles', [AdminController::class, 'listCycles']);
 $router->post('/api/admin/cycles', [AdminController::class, 'createCycle']);
 $router->put('/api/admin/cycles/{id}', [AdminController::class, 'updateCycle']);
 $router->patch('/api/admin/cycles/{id}/status', [AdminController::class, 'setCycleStatus']);
+$router->get('/api/admin/cycles/{id}/access', [AdminController::class, 'listCycleAccess']);
+$router->put('/api/admin/cycles/{id}/access/{deptId}', [AdminController::class, 'grantCycleAccess']);
+$router->delete('/api/admin/cycles/{id}/access/{deptId}', [AdminController::class, 'revokeCycleAccess']);
 
 $router->get('/api/admin/users', [AdminController::class, 'listUsers']);
 $router->get('/api/admin/users/template', [AdminController::class, 'usersTemplate']);

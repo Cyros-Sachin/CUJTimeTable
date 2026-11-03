@@ -4,6 +4,11 @@ import { toast, confirmDialog, openFormModal, closeFormModal, formModalErrors, d
 const root = document.getElementById('adminTabRoot');
 const tab = root.dataset.tab;
 
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function table(headers, rows) {
   return el('table', { class: 'table align-middle mb-0' }, [
     el('thead', {}, el('tr', {}, headers.map((h) => el('th', {}, h)))),
@@ -262,8 +267,10 @@ async function renderSessionsCycles() {
     el('button', { type: 'button', class: 'btn btn-primary btn-sm', onclick: () => openCycleModal() }, [el('i', { class: 'bi bi-plus-lg me-1' }), 'Add cycle']),
   ]);
   const cyclesWrap = el('div', { class: 'card-surface p-0', id: 'cyclesWrap' });
+  const accessWrap = el('div', { class: 'mt-4', id: 'cycleAccessWrap' });
 
-  root.append(sessionsHeader, sessionsWrap, cyclesHeader, cyclesWrap);
+  root.append(sessionsHeader, sessionsWrap, cyclesHeader, cyclesWrap, accessWrap);
+  let accessCycle = null;
 
   renderSessionsTable(sessionsRes.data);
   renderCyclesTable(cyclesRes.data);
@@ -284,16 +291,138 @@ async function renderSessionsCycles() {
       el('td', {}, `${c.title} – ${c.month_year}`),
       el('td', {}, c.session_label || ''),
       el('td', {}, `${ddmmyyyy(c.start_date)} – ${ddmmyyyy(c.end_date)}`),
+      el('td', {}, deadlineCell(c)),
       el('td', {}, c.status === 'LOCKED' ? el('span', { class: 'chip chip-locked' }, [el('i', { class: 'bi bi-lock-fill me-1' }), 'Locked']) : el('span', { class: 'chip chip-open' }, 'Open')),
       el('td', { class: 'text-end text-nowrap' }, [
         el('button', { type: 'button', class: 'btn btn-sm btn-link', onclick: () => openCycleModal(c), title: 'Edit' }, el('i', { class: 'bi bi-pencil' })),
+        el('button', {
+          type: 'button', class: 'btn btn-sm btn-outline-secondary me-1',
+          onclick: () => showCycleAccess(c), title: 'Department edit access',
+        }, [el('i', { class: 'bi bi-building-lock me-1' }), 'Departments']),
         el('button', {
           type: 'button', class: 'btn btn-sm btn-outline-secondary',
           onclick: () => toggleCycleStatus(c),
         }, c.status === 'OPEN' ? [el('i', { class: 'bi bi-lock me-1' }), 'Lock'] : [el('i', { class: 'bi bi-unlock me-1' }), 'Unlock']),
       ]),
     ]));
-    cyclesWrap.appendChild(el('div', { class: 'table-scroll' }, table(['Title', 'Session', 'Window', 'Status', ''], bodyRows)));
+    cyclesWrap.appendChild(el('div', { class: 'table-scroll' }, table(['Title', 'Session', 'Window', 'Submission deadline', 'Status', ''], bodyRows)));
+  }
+
+  function deadlineCell(c) {
+    if (!c.submission_deadline) return el('span', { class: 'text-muted small' }, 'None');
+    const passed = c.submission_deadline.slice(0, 10) < todayIso();
+    return el('span', {}, [
+      ddmmyyyy(c.submission_deadline),
+      ' ',
+      passed
+        ? el('span', { class: 'chip chip-locked' }, [el('i', { class: 'bi bi-lock-fill me-1' }), 'Passed'])
+        : el('span', { class: 'chip chip-open' }, 'Open'),
+    ]);
+  }
+
+  // ---- Per-department edit access for one cycle ----------------------------
+  async function showCycleAccess(cycle) {
+    accessCycle = cycle;
+    accessWrap.innerHTML = '<div class="skeleton" style="height:200px"></div>';
+    let res;
+    try {
+      res = (await apiGet(`/admin/cycles/${cycle.id}/access`)).data;
+    } catch (err) {
+      accessWrap.innerHTML = '';
+      toast(err instanceof ApiError ? err.message : 'Could not load department access', 'error');
+      return;
+    }
+    const info = res.cycle;
+    accessWrap.innerHTML = '';
+
+    let note;
+    if (info.status === 'LOCKED') {
+      note = 'This cycle is locked for everyone. Unlock the cycle first; re-opening a single department does not override a full lock.';
+    } else if (!info.submission_deadline) {
+      note = 'No submission deadline is set, so every department can still add, edit and upload. Set one with the pencil (Edit) button.';
+    } else if (info.deadline_passed) {
+      note = `The deadline (${ddmmyyyy(info.submission_deadline)}) has passed. Departments are locked unless you re-open them below.`;
+    } else {
+      note = `Departments can make changes until the end of ${ddmmyyyy(info.submission_deadline)}. After that they are locked unless you re-open them.`;
+    }
+
+    const bodyRows = res.departments.map((d) => el('tr', {}, [
+      el('td', {}, [el('div', { class: 'fw-semibold small' }, d.name), el('div', { class: 'text-muted', style: 'font-size:.75rem' }, d.code)]),
+      el('td', {}, d.entry_count ? String(d.entry_count) : el('span', { class: 'text-muted' }, '0')),
+      el('td', {}, accessChip(d)),
+      el('td', { class: 'text-end text-nowrap' }, [
+        el('button', {
+          type: 'button', class: 'btn btn-sm btn-outline-primary me-1',
+          onclick: () => grantAccess(d),
+        }, [el('i', { class: 'bi bi-unlock me-1' }), d.grant_active ? 'Change' : 'Allow edits']),
+        d.has_grant ? el('button', {
+          type: 'button', class: 'btn btn-sm btn-outline-danger',
+          onclick: () => revokeAccess(d),
+        }, [el('i', { class: 'bi bi-lock me-1' }), 'Lock again']) : '',
+      ]),
+    ]));
+
+    accessWrap.append(
+      el('div', { class: 'd-flex justify-content-between align-items-center mb-2' }, [
+        el('h3', { class: 'h6 fw-semibold mb-0' }, `Department edit access — ${cycle.title} – ${cycle.month_year}`),
+        el('button', { type: 'button', class: 'btn btn-sm btn-link', onclick: () => { accessCycle = null; accessWrap.innerHTML = ''; } }, 'Close'),
+      ]),
+      el('p', { class: 'small text-muted mb-2' }, note),
+      el('div', { class: 'card-surface p-0' }, el('div', { class: 'table-scroll' }, table(['Department', 'Entries', 'Access', ''], bodyRows))),
+    );
+    accessWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function accessChip(d) {
+    if (d.lock_reason === 'CYCLE_LOCKED') return el('span', { class: 'chip chip-locked' }, [el('i', { class: 'bi bi-lock-fill me-1' }), 'Cycle locked']);
+    if (d.lock_reason === 'DEADLINE_PASSED') {
+      const expired = d.has_grant && !d.grant_active ? ` (re-open ended ${ddmmyyyy(d.grant_until)})` : '';
+      return el('span', { class: 'chip chip-locked' }, [el('i', { class: 'bi bi-lock-fill me-1' }), `Locked${expired}`]);
+    }
+    if (d.reopened) {
+      return el('span', { class: 'chip chip-reappear' }, [el('i', { class: 'bi bi-unlock-fill me-1' }), d.unlocked_until ? `Re-opened until ${ddmmyyyy(d.unlocked_until)}` : 'Re-opened']);
+    }
+    if (d.grant_active) {
+      return el('span', { class: 'chip chip-open' }, d.grant_until ? `Open · re-open granted until ${ddmmyyyy(d.grant_until)}` : 'Open · re-open granted');
+    }
+    return el('span', { class: 'chip chip-open' }, 'Open');
+  }
+
+  async function grantAccess(d) {
+    const values = await openFormModal({
+      title: `Allow edits — ${d.name}`,
+      fields: [{
+        name: 'unlocked_until', label: 'Allow until (optional)', type: 'date',
+        hint: 'The department can add, edit and upload again until the end of this day. Leave empty to keep it open until you click "Lock again".',
+      }],
+      initialValues: { unlocked_until: d.grant_until ? d.grant_until.slice(0, 10) : '' },
+      submitLabel: 'Allow edits',
+    });
+    if (!values) return;
+    try {
+      await apiSend('PUT', `/admin/cycles/${accessCycle.id}/access/${d.department_id}`, { unlocked_until: values.unlocked_until || null });
+      toast(`${d.name} can edit again`);
+      closeFormModal();
+      showCycleAccess(accessCycle);
+    } catch (err) {
+      if (err instanceof ApiError) { if (err.fields) formModalErrors(err); toast(err.message, 'error'); }
+    }
+  }
+
+  async function revokeAccess(d) {
+    const ok = await confirmDialog({
+      title: 'Lock department again',
+      message: `${d.name} will no longer be able to add, edit or upload entries in this cycle once the deadline has passed.`,
+      confirmLabel: 'Lock again', danger: true,
+    });
+    if (!ok) return;
+    try {
+      await apiSend('DELETE', `/admin/cycles/${accessCycle.id}/access/${d.department_id}`);
+      toast(`${d.name} locked again`);
+      showCycleAccess(accessCycle);
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not update access', 'error');
+    }
   }
 
   async function toggleCycleStatus(cycle) {
@@ -301,6 +430,7 @@ async function renderSessionsCycles() {
       await apiSend('PATCH', `/admin/cycles/${cycle.id}/status`, { status: cycle.status === 'OPEN' ? 'LOCKED' : 'OPEN' });
       toast(cycle.status === 'OPEN' ? 'Cycle locked' : 'Cycle unlocked');
       renderCyclesTable((await apiGet('/admin/cycles')).data);
+      if (accessCycle && accessCycle.id === cycle.id) showCycleAccess(accessCycle);
     } catch (err) {
       toast(err instanceof ApiError ? err.message : 'Could not update cycle status', 'error');
     }
@@ -334,19 +464,29 @@ async function renderSessionsCycles() {
         { name: 'month_year', label: 'Month, Year', type: 'text', hint: 'e.g. May, 2026' },
         { name: 'start_date', label: 'Start date', type: 'date' },
         { name: 'end_date', label: 'End date', type: 'date' },
+        {
+          name: 'submission_deadline', label: 'Submission deadline (optional)', type: 'date',
+          hint: 'Departments can add, edit and upload until the end of this day. After it they are locked unless you re-open them. Leave empty for no deadline.',
+        },
       ],
       initialValues: item
-        ? { academic_session_id: item.academic_session_id, title: item.title, month_year: item.month_year, start_date: item.start_date.slice(0, 10), end_date: item.end_date.slice(0, 10) }
+        ? {
+          academic_session_id: item.academic_session_id, title: item.title, month_year: item.month_year,
+          start_date: item.start_date.slice(0, 10), end_date: item.end_date.slice(0, 10),
+          submission_deadline: item.submission_deadline ? item.submission_deadline.slice(0, 10) : '',
+        }
         : { title: 'End Semester Examination' },
     });
     if (!values) return;
     values.academic_session_id = Number(values.academic_session_id);
+    values.submission_deadline = values.submission_deadline || null;
     try {
       if (item) await apiSend('PUT', `/admin/cycles/${item.id}`, values);
       else await apiSend('POST', '/admin/cycles', values);
       toast(item ? 'Exam cycle updated' : 'Exam cycle created');
       closeFormModal();
       renderCyclesTable((await apiGet('/admin/cycles')).data);
+      if (item && accessCycle && accessCycle.id === item.id) showCycleAccess({ ...accessCycle, ...values });
     } catch (err) {
       if (err instanceof ApiError) { if (err.fields) formModalErrors(err); toast(err.message, 'error'); }
     }

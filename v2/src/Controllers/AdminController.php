@@ -11,6 +11,7 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Core\Validator;
 use App\Services\AuditService;
+use App\Services\CycleAccessService;
 use App\Services\Mailer;
 use App\Services\MasterImportService;
 
@@ -294,13 +295,15 @@ class AdminController
             'month_year' => ['required', 'string', 'max:30'],
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date'],
+            'submission_deadline' => ['date'],
         ]);
         if ($data['end_date'] < $data['start_date']) {
             throw new HttpException(422, 'VALIDATION', 'end_date must be on or after start_date', ['end_date' => 'Must be after start date']);
         }
+        $data['submission_deadline'] = $data['submission_deadline'] ?? null;
         $stmt = Db::conn()->prepare(
-            'INSERT INTO exam_cycles (academic_session_id, title, month_year, start_date, end_date)
-             VALUES (:academic_session_id, :title, :month_year, :start_date, :end_date)'
+            'INSERT INTO exam_cycles (academic_session_id, title, month_year, start_date, end_date, submission_deadline)
+             VALUES (:academic_session_id, :title, :month_year, :start_date, :end_date, :submission_deadline)'
         );
         $stmt->execute($data);
         $id = (int) Db::conn()->lastInsertId();
@@ -314,7 +317,13 @@ class AdminController
         $data = Validator::validate($request->all(), [
             'academic_session_id' => ['int', 'min:1'], 'title' => ['string', 'max:150'],
             'month_year' => ['string', 'max:30'], 'start_date' => ['date'], 'end_date' => ['date'],
+            'submission_deadline' => ['date'],
         ]);
+        // An empty submission_deadline clears it (the validator drops empty values, so check the raw body).
+        $raw = $request->all();
+        if (array_key_exists('submission_deadline', $raw) && ($raw['submission_deadline'] === null || $raw['submission_deadline'] === '')) {
+            $data['submission_deadline'] = null;
+        }
         if (!$data) {
             throw new HttpException(400, 'BAD_REQUEST', 'No fields to update');
         }
@@ -343,6 +352,97 @@ class AdminController
         $stmt = Db::conn()->prepare('UPDATE exam_cycles SET status = :status WHERE id = :id');
         $stmt->execute(['status' => $data['status'], 'id' => $params['id']]);
         $this->audit('ADMIN_CYCLE_STATUS', 'exam_cycles', $params['id'], $data, $request);
+        Response::json(['ok' => true]);
+    }
+
+    // ---- Per-department edit access after the submission deadline ----------
+    public function listCycleAccess(Request $request, array $params): void
+    {
+        $this->user();
+        $pdo = Db::conn();
+        $cycleStmt = $pdo->prepare('SELECT id, status, submission_deadline FROM exam_cycles WHERE id = :id');
+        $cycleStmt->execute(['id' => $params['id']]);
+        $cycle = $cycleStmt->fetch();
+        if (!$cycle) {
+            throw new HttpException(404, 'NOT_FOUND', 'Exam cycle not found');
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT d.id AS department_id, d.code, d.name,
+                    (SELECT COUNT(*) FROM exam_entries e WHERE e.exam_cycle_id = :c1 AND e.department_id = d.id) AS entry_count,
+                    (SELECT MAX(e.updated_at) FROM exam_entries e WHERE e.exam_cycle_id = :c2 AND e.department_id = d.id) AS last_change,
+                    u.exam_cycle_id AS grant_cycle, u.unlocked_until, u.granted_at, g.name AS granted_by_name
+             FROM departments d
+             LEFT JOIN cycle_department_unlocks u ON u.department_id = d.id AND u.exam_cycle_id = :c3
+             LEFT JOIN users g ON g.id = u.granted_by
+             WHERE d.is_active = 1
+             ORDER BY d.name'
+        );
+        $stmt->execute(['c1' => $cycle['id'], 'c2' => $cycle['id'], 'c3' => $cycle['id']]);
+
+        $rows = array_map(static function (array $r) use ($cycle) {
+            $grant = $r['grant_cycle'] !== null ? $r : null;
+            $access = CycleAccessService::evaluate($cycle['status'], $cycle['submission_deadline'], $grant);
+            return [
+                'department_id' => (int) $r['department_id'],
+                'code' => $r['code'],
+                'name' => $r['name'],
+                'entry_count' => (int) $r['entry_count'],
+                'last_change' => $r['last_change'],
+                'has_grant' => $grant !== null,
+                'grant_until' => $grant ? $r['unlocked_until'] : null,
+                'grant_active' => CycleAccessService::grantActive($grant),
+                'granted_at' => $grant ? $r['granted_at'] : null,
+                'granted_by_name' => $grant ? $r['granted_by_name'] : null,
+            ] + $access;
+        }, $stmt->fetchAll());
+
+        Response::json([
+            'cycle' => [
+                'id' => (int) $cycle['id'],
+                'status' => $cycle['status'],
+                'submission_deadline' => $cycle['submission_deadline'],
+                'deadline_passed' => CycleAccessService::deadlinePassed($cycle['submission_deadline']),
+            ],
+            'departments' => $rows,
+        ]);
+    }
+
+    public function grantCycleAccess(Request $request, array $params): void
+    {
+        $user = $this->user();
+        $data = Validator::validate($request->all(), ['unlocked_until' => ['date']]);
+        $until = $data['unlocked_until'] ?? null;
+        if ($until !== null && $until < CycleAccessService::today()) {
+            throw new HttpException(422, 'VALIDATION', 'Re-open date cannot be in the past', ['unlocked_until' => 'Must be today or later']);
+        }
+        $cycleId = (int) $params['id'];
+        $deptId = (int) $params['deptId'];
+        if (!self::count('SELECT COUNT(*) AS c FROM exam_cycles WHERE id = :id', ['id' => $cycleId])) {
+            throw new HttpException(404, 'NOT_FOUND', 'Exam cycle not found');
+        }
+        if (!self::count('SELECT COUNT(*) AS c FROM departments WHERE id = :id', ['id' => $deptId])) {
+            throw new HttpException(404, 'NOT_FOUND', 'Department not found');
+        }
+
+        $stmt = Db::conn()->prepare(
+            'INSERT INTO cycle_department_unlocks (exam_cycle_id, department_id, unlocked_until, granted_by)
+             VALUES (:cycle, :dept, :until, :by)
+             ON DUPLICATE KEY UPDATE unlocked_until = VALUES(unlocked_until), granted_by = VALUES(granted_by), granted_at = CURRENT_TIMESTAMP'
+        );
+        $stmt->execute(['cycle' => $cycleId, 'dept' => $deptId, 'until' => $until, 'by' => $user['id']]);
+        $this->audit('ADMIN_CYCLE_ACCESS_GRANT', 'exam_cycles', (string) $cycleId, ['department_id' => $deptId, 'unlocked_until' => $until], $request);
+        Response::json(['ok' => true]);
+    }
+
+    public function revokeCycleAccess(Request $request, array $params): void
+    {
+        $this->user();
+        $cycleId = (int) $params['id'];
+        $deptId = (int) $params['deptId'];
+        $stmt = Db::conn()->prepare('DELETE FROM cycle_department_unlocks WHERE exam_cycle_id = :cycle AND department_id = :dept');
+        $stmt->execute(['cycle' => $cycleId, 'dept' => $deptId]);
+        $this->audit('ADMIN_CYCLE_ACCESS_REVOKE', 'exam_cycles', (string) $cycleId, ['department_id' => $deptId], $request);
         Response::json(['ok' => true]);
     }
 

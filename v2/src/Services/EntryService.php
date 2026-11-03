@@ -102,9 +102,7 @@ class EntryService
             $cycle = self::loadCycle($pdo, $body['exam_cycle_id']);
             self::loadTimeSlot($pdo, $body['time_slot_id']);
 
-            if ($cycle['status'] === 'LOCKED' && $user['role'] === 'DEPT_COORDINATOR') {
-                throw new HttpException(403, 'CYCLE_LOCKED', 'This exam cycle is locked');
-            }
+            CycleAccessService::assertCanEdit($pdo, $user, (int) $cycle['id'], $departmentId);
 
             self::validateBusinessRules($departmentId, $program, $cycle, $body['semester'], $body['exam_date']);
             ClashService::assertNoClash($pdo, $body['exam_cycle_id'], $body['program_id'], $program['name'], $body['semester'], $body['exam_type'], $body['exam_date'], $body['time_slot_id']);
@@ -161,8 +159,10 @@ class EntryService
             $cycle = self::loadCycle($pdo, $merged['exam_cycle_id']);
             self::loadTimeSlot($pdo, $merged['time_slot_id']);
 
-            if ($cycle['status'] === 'LOCKED' && $user['role'] === 'DEPT_COORDINATOR') {
-                throw new HttpException(403, 'CYCLE_LOCKED', 'This exam cycle is locked');
+            // Both the cycle the entry is in now and the one it would move to must be editable.
+            CycleAccessService::assertCanEdit($pdo, $user, (int) $existing['exam_cycle_id'], (int) $existing['department_id']);
+            if ((int) $cycle['id'] !== (int) $existing['exam_cycle_id']) {
+                CycleAccessService::assertCanEdit($pdo, $user, (int) $cycle['id'], $departmentId);
             }
 
             self::validateBusinessRules($departmentId, $program, $cycle, $merged['semester'], $merged['exam_date']);
@@ -199,14 +199,7 @@ class EntryService
             }
             self::assertDepartmentScope($user, (int) $existing['department_id']);
 
-            if ($user['role'] === 'DEPT_COORDINATOR') {
-                $cycleStmt = $pdo->prepare('SELECT status FROM exam_cycles WHERE id = :id');
-                $cycleStmt->execute(['id' => $existing['exam_cycle_id']]);
-                $cycle = $cycleStmt->fetch();
-                if ($cycle && $cycle['status'] === 'LOCKED') {
-                    throw new HttpException(403, 'CYCLE_LOCKED', 'This exam cycle is locked');
-                }
-            }
+            CycleAccessService::assertCanEdit($pdo, $user, (int) $existing['exam_cycle_id'], (int) $existing['department_id']);
 
             $del = $pdo->prepare('DELETE FROM exam_entries WHERE id = :id');
             $del->execute(['id' => $id]);

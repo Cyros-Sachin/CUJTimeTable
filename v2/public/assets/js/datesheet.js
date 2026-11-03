@@ -39,7 +39,7 @@ async function init() {
 
   if (!state.cycle_id && meta.cycles[0]) state.cycle_id = meta.cycles[0].id;
   fillSelect(document.getElementById('cycleSelect'), meta.cycles.map((c) => ({
-    value: c.id, label: `${c.title} – ${c.month_year}${c.status === 'LOCKED' ? ' (Locked)' : ''}`,
+    value: c.id, label: `${c.title} – ${c.month_year}${c.status === 'LOCKED' || c.can_edit === false ? ' (Locked)' : ''}`,
   })), 'Select exam cycle…');
   if (state.cycle_id) document.getElementById('cycleSelect').value = String(state.cycle_id);
 
@@ -92,7 +92,54 @@ function refreshProgramFilterOptions() {
   if (state.program_id) document.getElementById('programFilter').value = String(state.program_id);
 }
 
+function selectedCycle() {
+  return meta.cycles.find((c) => c.id === state.cycle_id) || null;
+}
+
+/** Coordinators lose add/edit/delete/upload once the cycle's deadline has passed (unless re-opened). */
+function canEditSelectedCycle() {
+  const cycle = selectedCycle();
+  return !cycle || cycle.can_edit !== false;
+}
+
+function renderLockState() {
+  const banner = document.getElementById('lockBanner');
+  const cycle = selectedCycle();
+  const editable = canEditSelectedCycle();
+  document.getElementById('uploadCard').classList.toggle('d-none', !editable);
+  banner.className = 'alert d-none mb-4';
+  banner.innerHTML = '';
+  if (!cycle) return;
+
+  let icon = null;
+  let text = null;
+  let tone = 'alert-warning';
+  if (cycle.lock_reason === 'CYCLE_LOCKED') {
+    icon = 'bi-lock-fill';
+    text = 'This exam cycle is locked by the Exam Cell. Entries can be viewed but not changed.';
+    tone = 'alert-secondary';
+  } else if (cycle.lock_reason === 'DEADLINE_PASSED') {
+    icon = 'bi-lock-fill';
+    text = `The submission deadline (${ddmmyyyy(cycle.submission_deadline)}) has passed. Uploads and edits are locked. Contact the Exam Cell if you need to make changes.`;
+    tone = 'alert-secondary';
+  } else if (cycle.reopened) {
+    icon = 'bi-unlock-fill';
+    text = cycle.unlocked_until
+      ? `The Exam Cell has re-opened this cycle for your department until ${ddmmyyyy(cycle.unlocked_until)}.`
+      : 'The Exam Cell has re-opened this cycle for your department.';
+  } else if (cycle.submission_deadline && user.role === 'DEPT_COORDINATOR') {
+    icon = 'bi-calendar-event';
+    text = `Submission deadline: ${ddmmyyyy(cycle.submission_deadline)}. After this date, uploads and edits will be locked.`;
+    tone = 'alert-info';
+  }
+  if (!text) return;
+  banner.classList.remove('d-none');
+  banner.classList.add(tone);
+  banner.append(el('i', { class: `bi ${icon} me-2` }), text);
+}
+
 async function refreshAll() {
+  renderLockState();
   await Promise.all([refreshEntriesTable(), refreshGroups()]);
 }
 
@@ -110,6 +157,7 @@ async function refreshEntriesTable() {
     return;
   }
 
+  const editable = canEditSelectedCycle();
   const table = el('table', { class: 'table align-middle mb-0' }, [
     el('thead', {}, el('tr', {}, ['Date', 'Time', 'Code', 'Course Name', 'Subject Type', 'Students', ''].map((h) => el('th', {}, h)))),
     el('tbody', {}, rows.map((r) => el('tr', {}, [
@@ -119,13 +167,13 @@ async function refreshEntriesTable() {
       el('td', {}, r.course_name),
       el('td', {}, r.subject_type_name),
       el('td', {}, String(r.student_count)),
-      el('td', {}, [
+      el('td', {}, editable ? [
         el('a', { href: `/entries/${r.id}/edit`, class: 'btn btn-sm btn-link', title: 'Edit' }, el('i', { class: 'bi bi-pencil' })),
         el('button', {
           type: 'button', class: 'btn btn-sm btn-link text-danger', title: 'Delete',
           onclick: () => deleteEntry(r.id),
         }, el('i', { class: 'bi bi-trash' })),
-      ]),
+      ] : el('i', { class: 'bi bi-lock text-muted', title: 'Locked' })),
     ]))),
   ]);
 

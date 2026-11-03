@@ -71,10 +71,10 @@ function refreshCycles() {
   const sessionId = currentSessionId();
   let cycles = meta.cycles.filter((c) => c.academic_session_id === sessionId);
   if (user.role === 'DEPT_COORDINATOR') {
-    cycles = cycles.filter((c) => c.status === 'OPEN' || String(c.id) === fields.exam_cycle_id.value);
+    cycles = cycles.filter((c) => (c.status === 'OPEN' && c.can_edit !== false) || String(c.id) === fields.exam_cycle_id.value);
   }
   fillSelect(fields.exam_cycle_id, cycles.map((c) => ({
-    value: c.id, label: `${c.title} – ${c.month_year}${c.status === 'LOCKED' ? ' (Locked)' : ''}`,
+    value: c.id, label: `${c.title} – ${c.month_year}${c.status === 'LOCKED' || c.can_edit === false ? ' (Locked)' : ''}`,
   })), { placeholder: 'Select examination…' });
   fields.exam_cycle_id.disabled = !sessionId;
   updateFlatpickrBounds();
