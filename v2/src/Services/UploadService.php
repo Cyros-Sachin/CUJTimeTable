@@ -12,7 +12,9 @@ use PhpOffice\PhpSpreadsheet\Cell\Cell;
 
 class UploadService
 {
-    private const REQUIRED_HEADERS = ['Department', 'Program', 'Semester', 'Subject Type', 'Date', 'Time Slot', 'Course Code', 'Course Name', 'No. of Students'];
+    private const REQUIRED_HEADERS = ['Department', 'Program', 'Semester', 'Subject Type', 'Date', 'Time Slot', 'Course Code', 'Course Name', 'No. of Students in your Department'];
+    /** Older header spellings still accepted, so templates downloaded before a rename keep uploading. */
+    private const LEGACY_HEADERS = ['No. of Students in your Department' => ['No. of Students']];
     private const COURSE_CODE_REGEX = '/^[A-Z0-9][A-Z0-9\-_\/ ]{2,29}$/';
     private const MAX_ROWS = 1000;
     private const MAX_SIZE = 5 * 1024 * 1024;
@@ -125,7 +127,9 @@ class UploadService
         }
         $headersOk = true;
         foreach (self::REQUIRED_HEADERS as $i => $expected) {
-            if (strcasecmp($headerCells[$i] ?? '', $expected) !== 0) {
+            $accepted = array_merge([$expected], self::LEGACY_HEADERS[$expected] ?? []);
+            $actual = $headerCells[$i] ?? '';
+            if (!array_filter($accepted, fn ($a) => strcasecmp($actual, $a) === 0)) {
                 $headersOk = false;
                 break;
             }
@@ -241,7 +245,7 @@ class UploadService
                 $rowErrors[] = ['field' => 'course_name', 'message' => 'Course name must be 2-200 characters'];
             }
             if ($studentCount === null || $studentCount < 1 || $studentCount > 5000) {
-                $rowErrors[] = ['field' => 'student_count', 'message' => 'No. of Students must be an integer between 1 and 5000'];
+                $rowErrors[] = ['field' => 'student_count', 'message' => 'No. of Students in your Department must be an integer between 1 and 5000'];
             }
 
             if ($program && $slot && $isoDate) {

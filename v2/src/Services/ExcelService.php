@@ -138,10 +138,10 @@ class ExcelService
             $listsSheet->setCellValue('N' . $n, $n);
         }
 
-        $headers = ['Department', 'Program', 'Semester', 'Subject Type', 'Date', 'Time Slot', 'Course Code', 'Course Name', 'No. of Students'];
+        $headers = ['Department', 'Program', 'Semester', 'Subject Type', 'Date', 'Time Slot', 'Course Code', 'Course Name', 'No. of Students in your Department'];
         foreach ($headers as $i => $h) {
             $sheet->setCellValue([$i + 1, 1], $h);
-            $sheet->getColumnDimensionByColumn($i + 1)->setWidth($h === 'Course Name' ? 36 : 22);
+            $sheet->getColumnDimensionByColumn($i + 1)->setWidth(in_array($h, ['Course Name', 'No. of Students in your Department'], true) ? 36 : 22);
         }
         self::styleHeaderRow($sheet, 'A1:I1');
         $sheet->freezePane('A2');
@@ -185,7 +185,7 @@ class ExcelService
             $dv->setOperator(DataValidation::OPERATOR_BETWEEN);
             $dv->setAllowBlank(true);
             $dv->setShowErrorMessage(true);
-            $dv->setErrorTitle('No. of Students');
+            $dv->setErrorTitle('Students in your Department'); // Excel caps this title at 32 chars
             $dv->setError('Enter a whole number between 1 and 5000.');
             $dv->setFormula1('1');
             $dv->setFormula2('5000');
@@ -204,11 +204,11 @@ class ExcelService
             '',
             'Fill one exam per row from row 2 downward.',
             'Department, Program, Semester, Subject Type, Date and Time Slot are dropdowns - pick the value, do not type it.',
-            'Program choices depend on the Department, and Semester choices on the Program, of the same row. Only Course Code, Course Name and No. of Students are typed.',
+            'Program choices depend on the Department, and Semester choices on the Program, of the same row. Only Course Code, Course Name and No. of Students in your Department are typed.',
             'Rows with a program from another department are rejected on upload.',
             'Date list contains only the dates of the selected exam cycle.',
             'Course Code: letters/digits, e.g. MBIO1C004T. Course Name: 2-200 characters.',
-            'No. of Students: whole number 1-5000.',
+            'No. of Students in your Department: whole number 1-5000.',
             'Do not rename or reorder the header row. Max 1000 rows. Upload the file under the same exam type and cycle.',
             'Download a fresh template if departments, programs, time slots or the cycle dates change.',
         ];
