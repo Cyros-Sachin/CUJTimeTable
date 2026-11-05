@@ -30,6 +30,16 @@
             <div class="invalid-text" data-error-for="subject_type_id"></div>
           </div>
           <div class="col-sm-6">
+            <label class="form-label" for="academic_session_id">Academic Session</label>
+            <select class="form-select" id="academic_session_id" name="academic_session_id"></select>
+            <div class="invalid-text" data-error-for="academic_session_id"></div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="exam_cycle_id">Examination</label>
+            <select class="form-select" id="exam_cycle_id" name="exam_cycle_id" disabled></select>
+            <div class="invalid-text" data-error-for="exam_cycle_id"></div>
+          </div>
+          <div class="col-sm-6">
             <label class="form-label" for="time_slot_id">Timing</label>
             <select class="form-select" id="time_slot_id" name="time_slot_id"></select>
             <div class="invalid-text" data-error-for="time_slot_id"></div>
@@ -53,16 +63,6 @@
             <label class="form-label" for="student_count">No. of Students</label>
             <input type="number" min="1" max="5000" class="form-control" id="student_count" name="student_count" />
             <div class="invalid-text" data-error-for="student_count"></div>
-          </div>
-          <div class="col-sm-6">
-            <label class="form-label" for="academic_session_id">Academic Session</label>
-            <select class="form-select" id="academic_session_id" name="academic_session_id"></select>
-            <div class="invalid-text" data-error-for="academic_session_id"></div>
-          </div>
-          <div class="col-sm-6">
-            <label class="form-label" for="exam_cycle_id">Examination</label>
-            <select class="form-select" id="exam_cycle_id" name="exam_cycle_id" disabled></select>
-            <div class="invalid-text" data-error-for="exam_cycle_id"></div>
           </div>
         </div>
 

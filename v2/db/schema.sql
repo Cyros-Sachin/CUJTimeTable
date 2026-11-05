@@ -90,7 +90,6 @@ CREATE TABLE IF NOT EXISTS exam_entries (
   updated_by INT UNSIGNED NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_slot (exam_cycle_id, program_id, semester, exam_type, exam_date, time_slot_id),
   UNIQUE KEY uq_course (exam_cycle_id, program_id, semester, exam_type, course_code),
   KEY ix_cycle_date (exam_cycle_id, exam_date, time_slot_id),
   KEY ix_dept (department_id),

@@ -36,7 +36,7 @@ $title = 'DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cycleMonthYea
     <tr><td class="l4">Rahya-Suchani (Bagla), Samba-181143, Jammu</td></tr>
   </table>
   <hr class="rule" />
-  <div class="title"><?= e($title) ?></div>
+  <div class="title"><?= pdf_text($title) ?></div>
 
   <table class="overall">
     <thead>
@@ -71,12 +71,12 @@ $title = 'DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cycleMonthYea
         <td class="center"><?= $sno ?></td>
         <td class="center"><?= e(ddmmyyyy($row['exam_date'])) ?><br />(<?= e(weekday_of($row['exam_date'])) ?>)</td>
         <td class="center"><?= e($row['time_slot_label']) ?></td>
-        <td><?= e($row['department_name']) ?></td>
-        <td><?= e($row['program_name']) ?></td>
+        <td><?= pdf_text($row['department_name']) ?></td>
+        <td><?= pdf_text($row['program_name']) ?></td>
         <td class="center"><?= e($row['semester']) ?></td>
         <td class="center"><?= e(exam_type_label($row['exam_type'])) ?></td>
         <td class="center"><?= e($row['course_code']) ?></td>
-        <td><?= e($row['course_name']) ?></td>
+        <td><?= pdf_text($row['course_name']) ?></td>
         <td class="num"><?= e($row['student_count']) ?></td>
       </tr>
       <?php endforeach; $flush(); ?>

@@ -177,7 +177,6 @@ class UploadService
 
         $rows = [];
         $errors = [];
-        $seenSlot = [];
         $seenCourse = [];
         $rowCount = 0;
 
@@ -248,13 +247,6 @@ class UploadService
                 $rowErrors[] = ['field' => 'student_count', 'message' => 'No. of Students in your Department must be an integer between 1 and 5000'];
             }
 
-            if ($program && $slot && $isoDate) {
-                $slotKey = $program['id'] . '|' . $semester . '|' . $examType . '|' . $isoDate . '|' . $slot['id'];
-                if (isset($seenSlot[$slotKey])) {
-                    $rowErrors[] = ['field' => 'exam_date', 'message' => 'Duplicate slot within this file'];
-                }
-                $seenSlot[$slotKey] = true;
-            }
             if ($program && $courseCode) {
                 $courseKey = $program['id'] . '|' . $semester . '|' . $examType . '|' . $courseCode;
                 if (isset($seenCourse[$courseKey])) {
@@ -287,7 +279,6 @@ class UploadService
         return Db::transaction(function ($pdo) use ($rows, $examCycleId, $examType, $departmentId, $user, $ip) {
             $inserted = [];
             foreach ($rows as $row) {
-                ClashService::assertNoClash($pdo, $examCycleId, $row['program_id'], $row['program_name'], $row['semester'], $examType, $row['exam_date'], $row['time_slot_id']);
                 ClashService::assertNoDuplicateCourse($pdo, $examCycleId, $row['program_id'], $row['semester'], $examType, $row['course_code']);
 
                 $stmt = $pdo->prepare(

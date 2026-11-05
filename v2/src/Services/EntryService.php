@@ -105,7 +105,6 @@ class EntryService
             CycleAccessService::assertCanEdit($pdo, $user, (int) $cycle['id'], $departmentId);
 
             self::validateBusinessRules($departmentId, $program, $cycle, $body['semester'], $body['exam_date']);
-            ClashService::assertNoClash($pdo, $body['exam_cycle_id'], $body['program_id'], $program['name'], $body['semester'], $body['exam_type'], $body['exam_date'], $body['time_slot_id']);
             ClashService::assertNoDuplicateCourse($pdo, $body['exam_cycle_id'], $body['program_id'], $body['semester'], $body['exam_type'], $body['course_code']);
 
             $stmt = $pdo->prepare(
@@ -166,7 +165,6 @@ class EntryService
             }
 
             self::validateBusinessRules($departmentId, $program, $cycle, $merged['semester'], $merged['exam_date']);
-            ClashService::assertNoClash($pdo, $merged['exam_cycle_id'], $merged['program_id'], $program['name'], $merged['semester'], $merged['exam_type'], $merged['exam_date'], $merged['time_slot_id'], $id);
             ClashService::assertNoDuplicateCourse($pdo, $merged['exam_cycle_id'], $merged['program_id'], $merged['semester'], $merged['exam_type'], $merged['course_code'], $id);
 
             $stmt = $pdo->prepare(
@@ -216,7 +214,6 @@ class EntryService
             $cycle = self::loadCycle($pdo, $body['exam_cycle_id']);
 
             self::validateBusinessRules($departmentId, $program, $cycle, $body['semester'], $body['exam_date']);
-            ClashService::assertNoClash($pdo, $body['exam_cycle_id'], $body['program_id'], $program['name'], $body['semester'], $body['exam_type'], $body['exam_date'], $body['time_slot_id'], $body['exclude_id'] ?? null);
             ClashService::assertNoDuplicateCourse($pdo, $body['exam_cycle_id'], $body['program_id'], $body['semester'], $body['exam_type'], $body['course_code'], $body['exclude_id'] ?? null);
 
             return ['ok' => true];

@@ -14,6 +14,24 @@ if (!function_exists('e')) {
     }
 }
 
+if (!function_exists('pdf_text')) {
+    /**
+     * Escape for the mPDF views and wrap every Devanagari run in <span class="hindi">, so Hindi
+     * course/program/department names render in Lohit Devanagari instead of as empty boxes
+     * (the PDFs' default DejaVu font has no Devanagari glyphs). Spaces and simple punctuation
+     * between Hindi words stay inside the run so conjuncts/matras are shaped as one string.
+     */
+    function pdf_text(mixed $value): string
+    {
+        $deva = '[\x{0900}-\x{097F}\x{A8E0}-\x{A8FF}\x{200C}\x{200D}]';
+        return (string) preg_replace(
+            '/' . $deva . '+(?:[\s,.:\-\/()]+' . $deva . '+)*/u',
+            '<span class="hindi">$0</span>',
+            e($value)
+        );
+    }
+}
+
 if (!function_exists('csrf_token')) {
     function csrf_token(): string
     {

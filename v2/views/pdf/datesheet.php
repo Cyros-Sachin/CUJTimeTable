@@ -14,7 +14,7 @@
 /** @var array $rows */
 
 $title = 'DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cycleMonthYear;
-$programLine = e($programName) . ' SEMESTER-' . to_roman($semester) . ($examType === 'REAPPEAR' ? ' (REAPPEAR)' : '');
+$programLine = pdf_text($programName) . ' SEMESTER-' . to_roman($semester) . ($examType === 'REAPPEAR' ? ' (REAPPEAR)' : '');
 ?>
 <!doctype html>
 <html lang="en">
@@ -72,8 +72,8 @@ $programLine = e($programName) . ' SEMESTER-' . to_roman($semester) . ($examType
       <td style="text-align:right"><?= e(long_date($issuedOn)) ?></td>
     </tr>
   </table>
-  <div class="title"><?= e($title) ?></div>
-  <div class="dept-line"><?= e(mb_strtoupper($departmentName)) ?></div>
+  <div class="title"><?= pdf_text($title) ?></div>
+  <div class="dept-line"><?= pdf_text(mb_strtoupper($departmentName)) ?></div>
   <div class="program-line"><?= $programLine ?></div>
 
   <table class="datesheet">
@@ -90,7 +90,7 @@ $programLine = e($programName) . ' SEMESTER-' . to_roman($semester) . ($examType
       <tr>
         <td class="date-cell"><?= e(ddmmyyyy($row['exam_date'])) ?><br /><span class="weekday">(<?= e(weekday_of($row['exam_date'])) ?>)</span></td>
         <td class="code-cell">(<?= e($row['course_code']) ?>)</td>
-        <td class="name-cell"><?= e($row['course_name']) ?></td>
+        <td class="name-cell"><?= pdf_text($row['course_name']) ?></td>
         <td class="time-cell"><?= e($row['time_slot_label']) ?></td>
       </tr>
       <?php endforeach; ?>
@@ -102,11 +102,11 @@ $programLine = e($programName) . ' SEMESTER-' . to_roman($semester) . ($examType
       <td class="to-block" style="width:50%; padding-top:35mm;">
         <div>To</div>
         <div class="head-line">The Head,</div>
-        <div><?= e($departmentName) ?></div>
+        <div><?= pdf_text($departmentName) ?></div>
       </td>
       <td class="sign-block" style="width:50%; padding-top:10mm;">
         <?php if ($signatureDataUri): ?><img src="<?= e($signatureDataUri) ?>" /><?php endif; ?>
-        <?php if ($controllerName): ?><div class="controller-name"><?= e($controllerName) ?></div><?php endif; ?>
+        <?php if ($controllerName): ?><div class="controller-name"><?= pdf_text($controllerName) ?></div><?php endif; ?>
         <div class="controller-title"><?= e($controllerTitle) ?></div>
       </td>
     </tr>
