@@ -109,6 +109,7 @@ class PdfService
             'semester' => $params['semester'],
             'examType' => $params['examType'],
             'rows' => $params['rows'],
+            'title' => $params['title'] ?? null,
         ]);
     }
 

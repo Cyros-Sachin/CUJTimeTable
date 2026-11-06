@@ -25,6 +25,17 @@
   </div>
 </div>
 
+<div class="row g-2 align-items-end mb-4" id="dateWiseRow">
+  <div class="col-sm-4">
+    <label class="form-label">Date-wise date sheet</label>
+    <select class="form-select" id="dateWiseSelect"><option value="">Select a date…</option></select>
+  </div>
+  <div class="col-sm-8 d-flex gap-2">
+    <button type="button" class="btn btn-outline-secondary" id="dateWisePreviewBtn" disabled><i class="bi bi-eye me-1"></i>Preview</button>
+    <a href="#" class="btn btn-primary disabled" id="dateWiseDownloadBtn" aria-disabled="true"><i class="bi bi-download me-1"></i>Date wise download PDF</a>
+  </div>
+</div>
+
 <div class="card-surface p-3 mb-4">
   <div class="table-scroll" id="entriesTableWrap"><div class="skeleton" style="height:200px"></div></div>
 </div>

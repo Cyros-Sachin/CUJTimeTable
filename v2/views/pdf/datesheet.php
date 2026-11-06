@@ -7,14 +7,17 @@
 /** @var string $issuedOn */
 /** @var string $cycleTitle */
 /** @var string $cycleMonthYear */
-/** @var string $departmentName */
-/** @var string $programName */
-/** @var int $semester */
+/** @var string|null $departmentName  null for the date-wise sheet */
+/** @var string|null $programName     null for the date-wise sheet */
+/** @var int|null $semester */
+/** @var string|null $title           overrides the default heading */
 /** @var string $examType */
 /** @var array $rows */
 
-$title = 'DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cycleMonthYear;
-$programLine = pdf_text($programName) . ' SEMESTER-' . to_roman($semester) . ($examType === 'REAPPEAR' ? ' (REAPPEAR)' : '');
+$title = $title ?? ('DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cycleMonthYear);
+$programLine = $programName
+    ? pdf_text($programName) . ' SEMESTER-' . to_roman((int) $semester) . ($examType === 'REAPPEAR' ? ' (REAPPEAR)' : '')
+    : ($examType === 'REAPPEAR' ? '(REAPPEAR)' : '');
 ?>
 <!doctype html>
 <html lang="en">
@@ -73,8 +76,8 @@ $programLine = pdf_text($programName) . ' SEMESTER-' . to_roman($semester) . ($e
     </tr>
   </table>
   <div class="title"><?= pdf_text($title) ?></div>
-  <div class="dept-line"><?= pdf_text(mb_strtoupper($departmentName)) ?></div>
-  <div class="program-line"><?= $programLine ?></div>
+  <?php if ($departmentName): ?><div class="dept-line"><?= pdf_text(mb_strtoupper($departmentName)) ?></div><?php endif; ?>
+  <?php if ($programLine): ?><div class="program-line"><?= $programLine ?></div><?php endif; ?>
 
   <table class="datesheet">
     <thead>
@@ -100,9 +103,11 @@ $programLine = pdf_text($programName) . ' SEMESTER-' . to_roman($semester) . ($e
   <table class="footer">
     <tr>
       <td class="to-block" style="width:50%; padding-top:35mm;">
+        <?php if ($departmentName): ?>
         <div>To</div>
         <div class="head-line">The Head,</div>
         <div><?= pdf_text($departmentName) ?></div>
+        <?php endif; ?>
       </td>
       <td class="sign-block" style="width:50%; padding-top:10mm;">
         <?php if ($signatureDataUri): ?><img src="<?= e($signatureDataUri) ?>" /><?php endif; ?>

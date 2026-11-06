@@ -53,6 +53,8 @@ $router->get('/api/entries/{id}', [EntryController::class, 'show']);
 
 // ---- Date sheets ----------------------------------------------------------
 $router->get('/api/datesheets/pdf', [DateSheetController::class, 'pdf']);
+$router->get('/api/datesheets/dates', [DateSheetController::class, 'dates']);
+$router->get('/api/datesheets/date-pdf', [DateSheetController::class, 'datePdf']);
 $router->get('/api/datesheets', [DateSheetController::class, 'index']);
 
 // ---- Consolidated (EXAM_CELL) --------------------------------------------

@@ -83,6 +83,7 @@ async function init() {
   });
 
   setupUpload();
+  setupDateWise();
   await refreshAll();
 }
 
@@ -140,7 +141,7 @@ function renderLockState() {
 
 async function refreshAll() {
   renderLockState();
-  await Promise.all([refreshEntriesTable(), refreshGroups()]);
+  await Promise.all([refreshEntriesTable(), refreshGroups(), refreshDateWiseOptions()]);
 }
 
 async function refreshEntriesTable() {
@@ -234,6 +235,52 @@ function previewPdf(g) {
   document.getElementById('pdfPreviewFrame').src = pdfUrl(g, false);
   document.getElementById('pdfDownloadLink').href = pdfUrl(g, true);
   bootstrap.Modal.getOrCreateInstance(document.getElementById('pdfPreviewModal')).show();
+}
+
+/** Filters the date-wise endpoints share with the rest of the page. */
+function dateWiseFilters() {
+  return { cycle_id: state.cycle_id, exam_type: state.exam_type, department_id: state.department_id, program_id: state.program_id, semester: state.semester };
+}
+
+function dateWisePdfUrl(date, download) {
+  return `/api/datesheets/date-pdf${buildQuery({ ...dateWiseFilters(), date, download: download ? 1 : undefined })}`;
+}
+
+function updateDateWiseButtons() {
+  const date = document.getElementById('dateWiseSelect').value;
+  const link = document.getElementById('dateWiseDownloadBtn');
+  document.getElementById('dateWisePreviewBtn').disabled = !date;
+  link.classList.toggle('disabled', !date);
+  link.setAttribute('aria-disabled', date ? 'false' : 'true');
+  link.href = date ? dateWisePdfUrl(date, true) : '#';
+}
+
+function setupDateWise() {
+  document.getElementById('dateWiseSelect').addEventListener('change', updateDateWiseButtons);
+  document.getElementById('dateWisePreviewBtn').addEventListener('click', () => {
+    const date = document.getElementById('dateWiseSelect').value;
+    if (!date) return;
+    document.getElementById('pdfPreviewTitle').textContent = `Date sheet — ${ddmmyyyy(date)} (${weekdayOf(date)})`;
+    document.getElementById('pdfPreviewFrame').src = dateWisePdfUrl(date, false);
+    document.getElementById('pdfDownloadLink').href = dateWisePdfUrl(date, true);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('pdfPreviewModal')).show();
+  });
+}
+
+async function refreshDateWiseOptions() {
+  const select = document.getElementById('dateWiseSelect');
+  const previous = select.value;
+  if (!state.cycle_id) {
+    fillSelect(select, [], 'Select a date…');
+    updateDateWiseButtons();
+    return;
+  }
+  const res = await apiGet(`/datesheets/dates${buildQuery(dateWiseFilters())}`);
+  fillSelect(select, res.data.map((d) => ({
+    value: d.exam_date, label: `${ddmmyyyy(d.exam_date)} (${weekdayOf(d.exam_date)}) — ${d.exam_count} exam(s)`,
+  })), res.data.length ? 'Select a date…' : 'No exams for these filters');
+  if (previous && res.data.some((d) => d.exam_date === previous)) select.value = previous;
+  updateDateWiseButtons();
 }
 
 function setupUpload() {

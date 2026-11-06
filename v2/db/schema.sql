@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS programs (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   department_id INT UNSIGNED NOT NULL,
   code VARCHAR(30) NOT NULL,
-  name VARCHAR(200) NOT NULL,                   -- e.g. M.Sc. Biotechnology
+  name VARCHAR(200) NOT NULL,    6               -- e.g. M.Sc. Biotechnology
   total_semesters TINYINT UNSIGNED NOT NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   UNIQUE KEY uq_prog_dept_name (department_id, name),
