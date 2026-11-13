@@ -100,7 +100,6 @@ class PdfService
             'signatureDataUri' => self::fileToDataUri($settings['signaturePath']),
             'controllerName' => $settings['controllerName'],
             'controllerTitle' => $settings['controllerTitle'],
-            'refNo' => $params['refNo'],
             'issuedOn' => $params['issuedOn'],
             'cycleTitle' => $params['cycleTitle'],
             'cycleMonthYear' => $params['cycleMonthYear'],
@@ -110,6 +109,7 @@ class PdfService
             'examType' => $params['examType'],
             'rows' => $params['rows'],
             'title' => $params['title'] ?? null,
+            'groups' => $params['groups'] ?? null,
         ]);
     }
 

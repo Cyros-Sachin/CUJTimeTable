@@ -3,7 +3,6 @@
 /** @var string|null $signatureDataUri */
 /** @var string $controllerName */
 /** @var string $controllerTitle */
-/** @var string $refNo */
 /** @var string $issuedOn */
 /** @var string $cycleTitle */
 /** @var string $cycleMonthYear */
@@ -13,13 +12,15 @@
 /** @var string|null $title           overrides the default heading */
 /** @var string $examType */
 /** @var array $rows */
+/** @var array|null $groups          date-wise sheet: [{departmentName, semesters: [{semester, programs[], rows[]}]}] */
 
+$groups = $groups ?? null;
 $title = $title ?? ('DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cycleMonthYear);
 $programLine = $programName
     ? pdf_text($programName) . ' SEMESTER-' . to_roman((int) $semester) . ($examType === 'REAPPEAR' ? ' (REAPPEAR)' : '')
     : ($examType === 'REAPPEAR' ? '(REAPPEAR)' : '');
-// Date-wise rows carry the semesters each course is examined in; program sheets don't need the column.
-$showSemester = $rows && array_key_exists('semesters', $rows[0]);
+// Department sub-headings only when the date-wise sheet spans more than the department in the heading.
+$showDeptHeadings = $groups && !$departmentName;
 ?>
 <!doctype html>
 <html lang="en">
@@ -47,7 +48,8 @@ $showSemester = $rows && array_key_exists('semesters', $rows[0]);
   td.date-cell .weekday { font-size: 11px; }
   td.code-cell { text-align: center; white-space: nowrap; }
   td.name-cell { text-align: center; }
-  td.sem-cell { text-align: center; }
+  tr.dept-head td { font-weight: bold; text-transform: uppercase; background: #d9d9d9; text-align: center; font-size: 13px; }
+  tr.sem-head td { font-weight: bold; background: #f0f0f0; text-align: left; font-size: 12px; }
   td.time-cell { text-align: center; white-space: nowrap; }
   table.footer { width: 100%; border-collapse: collapse; margin-top: 46px; }
   table.footer td { vertical-align: top; padding: 0; font-size: 13px; }
@@ -74,7 +76,7 @@ $showSemester = $rows && array_key_exists('semesters', $rows[0]);
   <hr class="rule" />
   <table class="refrow">
     <tr>
-      <td style="text-align:left"><?= e($refNo) ?></td>
+      <td style="text-align:left">CUJ/Exam/Datesheet/<?= e(date('Y', strtotime($issuedOn))) ?>/</td>
       <td style="text-align:right"><?= e(long_date($issuedOn)) ?></td>
     </tr>
   </table>
@@ -85,32 +87,38 @@ $showSemester = $rows && array_key_exists('semesters', $rows[0]);
   <table class="datesheet">
     <thead>
       <tr>
-        <?php if ($showSemester): ?>
-        <th style="width:15%">Date</th>
-        <th style="width:12%">Semester</th>
-        <th style="width:20%">Course Code</th>
-        <th style="width:32%">Courses Name</th>
-        <th style="width:21%">Time</th>
-        <?php else: ?>
         <th style="width:17%">Date</th>
         <th style="width:23%">Course Code</th>
         <th style="width:36%">Courses Name</th>
         <th style="width:24%">Time</th>
-        <?php endif; ?>
       </tr>
     </thead>
     <tbody>
-      <?php foreach ($rows as $row): ?>
+      <?php
+      $renderRow = static function (array $row): void { ?>
       <tr>
         <td class="date-cell"><?= e(ddmmyyyy($row['exam_date'])) ?><br /><span class="weekday">(<?= e(weekday_of($row['exam_date'])) ?>)</span></td>
-        <?php if ($showSemester): ?>
-        <td class="sem-cell"><?= e(implode(', ', array_map(fn ($s) => to_roman((int) $s), explode(',', (string) $row['semesters'])))) ?></td>
-        <?php endif; ?>
         <td class="code-cell">(<?= e($row['course_code']) ?>)</td>
         <td class="name-cell"><?= pdf_text($row['course_name']) ?></td>
         <td class="time-cell"><?= e($row['time_slot_label']) ?></td>
       </tr>
-      <?php endforeach; ?>
+      <?php };
+      ?>
+      <?php if ($groups): ?>
+        <?php foreach ($groups as $group): ?>
+          <?php if ($showDeptHeadings): ?>
+          <tr class="dept-head"><td colspan="4"><?= pdf_text(mb_strtoupper($group['departmentName'])) ?></td></tr>
+          <?php endif; ?>
+          <?php foreach ($group['semesters'] as $sem): ?>
+          <tr class="sem-head">
+            <td colspan="4">Semester-<?= e(to_roman((int) $sem['semester'])) ?> &mdash; <?= pdf_text(implode(', ', $sem['programs'])) ?></td>
+          </tr>
+            <?php foreach ($sem['rows'] as $row) { $renderRow($row); } ?>
+          <?php endforeach; ?>
+        <?php endforeach; ?>
+      <?php else: ?>
+        <?php foreach ($rows as $row) { $renderRow($row); } ?>
+      <?php endif; ?>
     </tbody>
   </table>
 

@@ -13,7 +13,6 @@ use App\Services\AuditService;
 use App\Services\EntryService;
 use App\Services\ExcelService;
 use App\Services\PdfService;
-use App\Services\RefNumberService;
 
 class ConsolidatedController
 {
@@ -136,14 +135,11 @@ class ConsolidatedController
             $groups[$key]['rows'][] = $r;
         }
 
-        $cycleId = (int) ($filters['cycle_id'] ?? $rows[0]['exam_cycle_id'] ?? 0);
-
         // One datesheet per department/program/semester, in department order, merged into a single PDF.
         $paramsList = [];
         foreach ($groups as $group) {
-            $ref = Db::transaction(fn ($conn) => RefNumberService::getOrCreate($conn, $cycleId, $group['programId'], $group['semester'], $group['examType']));
             $paramsList[] = [
-                'refNo' => $ref['ref_no'], 'issuedOn' => $ref['issued_on'], 'cycleTitle' => $group['cycleTitle'], 'cycleMonthYear' => $group['cycleMonthYear'],
+                'issuedOn' => date('Y-m-d'), 'cycleTitle' => $group['cycleTitle'], 'cycleMonthYear' => $group['cycleMonthYear'],
                 'departmentName' => $group['departmentName'], 'programName' => $group['programName'], 'semester' => $group['semester'],
                 'examType' => $group['examType'], 'rows' => $group['rows'],
             ];

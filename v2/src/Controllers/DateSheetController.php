@@ -12,7 +12,6 @@ use App\Core\Response;
 use App\Core\Validator;
 use App\Services\AuditService;
 use App\Services\PdfService;
-use App\Services\RefNumberService;
 
 class DateSheetController
 {
@@ -37,14 +36,12 @@ class DateSheetController
             SELECT e.department_id, d.name AS department_name, d.code AS department_code,
                    e.program_id, p.name AS program_name, p.code AS program_code, p.total_semesters,
                    e.semester, COUNT(*) AS course_count, MIN(e.exam_date) AS first_date, MAX(e.exam_date) AS last_date,
-                   MAX(e.updated_at) AS last_updated, r.ref_no, r.issued_on
+                   MAX(e.updated_at) AS last_updated
             FROM exam_entries e
             JOIN departments d ON d.id = e.department_id
             JOIN programs p ON p.id = e.program_id
-            LEFT JOIN datesheet_refs r ON r.exam_cycle_id = e.exam_cycle_id AND r.program_id = e.program_id
-              AND r.semester = e.semester AND r.exam_type = e.exam_type
             WHERE ' . implode(' AND ', $where) . '
-            GROUP BY e.department_id, d.name, d.code, e.program_id, p.name, p.code, p.total_semesters, e.semester, r.ref_no, r.issued_on
+            GROUP BY e.department_id, d.name, d.code, e.program_id, p.name, p.code, p.total_semesters, e.semester
             ORDER BY d.name, p.name, e.semester
         ';
         $stmt = Db::conn()->prepare($sql);
@@ -102,15 +99,13 @@ class DateSheetController
             throw new HttpException(404, 'NOT_FOUND', 'No entries found for this program/semester/type yet');
         }
 
-        $ref = Db::transaction(fn ($conn) => RefNumberService::getOrCreate($conn, $q['cycle_id'], $q['program_id'], $q['semester'], $q['exam_type']));
-
         $pdfBinary = PdfService::renderDatesheetPdf([
-            'refNo' => $ref['ref_no'], 'issuedOn' => $ref['issued_on'], 'cycleTitle' => $cycle['title'], 'cycleMonthYear' => $cycle['month_year'],
+            'issuedOn' => date('Y-m-d'), 'cycleTitle' => $cycle['title'], 'cycleMonthYear' => $cycle['month_year'],
             'departmentName' => $program['department_name'], 'programName' => $program['name'], 'semester' => $q['semester'],
             'examType' => $q['exam_type'], 'rows' => $rows,
         ]);
 
-        AuditService::log((int) $user['id'], 'PDF_EXPORT', 'datesheet', $q['program_id'] . '-' . $q['semester'] . '-' . $q['exam_type'], ['refNo' => $ref['ref_no'], 'cycleId' => $q['cycle_id']], $request->ip);
+        AuditService::log((int) $user['id'], 'PDF_EXPORT', 'datesheet', $q['program_id'] . '-' . $q['semester'] . '-' . $q['exam_type'], ['cycleId' => $q['cycle_id']], $request->ip);
 
         $examLabel = $q['exam_type'] === 'REAPPEAR' ? 'Reappear' : 'Regular';
         $cycleSlug = preg_replace('/[,\s]+/', '-', $cycle['month_year']);
@@ -196,15 +191,19 @@ class DateSheetController
         $where[] = 'e.exam_date = :examDate';
         $params['examDate'] = $q['date'];
 
-        // A course shared by several programs/semesters (same code, name and slot) prints once,
-        // listing every semester it is examined in.
+        // Rows are grouped department -> semester. Within one department and semester, a course shared
+        // by several programs (same code, name and slot) prints once, listing the programs it covers.
         $entryStmt = $pdo->prepare(
-            'SELECT e.exam_date, e.course_code, e.course_name, ts.label AS time_slot_label, ts.start_time,
-                    GROUP_CONCAT(DISTINCT e.semester ORDER BY e.semester SEPARATOR \',\') AS semesters
-             FROM exam_entries e JOIN time_slots ts ON ts.id = e.time_slot_id
+            'SELECT e.exam_date, e.department_id, d.name AS department_name, e.semester,
+                    e.course_code, e.course_name, ts.label AS time_slot_label, ts.start_time,
+                    GROUP_CONCAT(DISTINCT p.name ORDER BY p.name SEPARATOR \'||\') AS program_names
+             FROM exam_entries e
+             JOIN time_slots ts ON ts.id = e.time_slot_id
+             JOIN departments d ON d.id = e.department_id
+             JOIN programs p ON p.id = e.program_id
              WHERE ' . implode(' AND ', $where) . '
-             GROUP BY e.exam_date, e.course_code, e.course_name, ts.id, ts.label, ts.start_time
-             ORDER BY ts.start_time ASC, e.course_code ASC'
+             GROUP BY e.exam_date, e.department_id, d.name, e.semester, e.course_code, e.course_name, ts.id, ts.label, ts.start_time
+             ORDER BY d.name ASC, e.semester ASC, ts.start_time ASC, e.course_code ASC'
         );
         $entryStmt->execute($params);
         $rows = $entryStmt->fetchAll();
@@ -212,11 +211,36 @@ class DateSheetController
             throw new HttpException(404, 'NOT_FOUND', 'No exams found on this date for the selected filters');
         }
 
+        $groups = [];
+        foreach ($rows as $row) {
+            $deptId = (int) $row['department_id'];
+            $sem = (int) $row['semester'];
+            $groups[$deptId] ??= ['departmentName' => $row['department_name'], 'semesters' => []];
+            $groups[$deptId]['semesters'][$sem] ??= ['semester' => $sem, 'programs' => [], 'rows' => []];
+            foreach (explode('||', (string) $row['program_names']) as $prog) {
+                $groups[$deptId]['semesters'][$sem]['programs'][$prog] = true;
+            }
+            $groups[$deptId]['semesters'][$sem]['rows'][] = $row;
+        }
+        foreach ($groups as &$g) {
+            foreach ($g['semesters'] as &$s) {
+                $s['programs'] = array_keys($s['programs']);
+            }
+            unset($s);
+            $g['semesters'] = array_values($g['semesters']);
+        }
+        unset($g);
+        $groups = array_values($groups);
+
+        // A single department (chosen in the filter, or a coordinator's own) goes in the heading
+        // instead of as a sub-heading, and the sheet is addressed to its Head.
+        $singleDept = count($groups) === 1 && ($user['role'] === 'DEPT_COORDINATOR' || !empty($q['department_id']));
+
         $pdfBinary = PdfService::renderDatesheetPdf([
-            'refNo' => '', 'issuedOn' => date('Y-m-d'), 'cycleTitle' => $cycle['title'], 'cycleMonthYear' => $cycle['month_year'],
+            'issuedOn' => date('Y-m-d'), 'cycleTitle' => $cycle['title'], 'cycleMonthYear' => $cycle['month_year'],
             'title' => 'DATE SHEET FOR ' . mb_strtoupper(long_date($q['date'])),
-            'departmentName' => null, 'programName' => null, 'semester' => null,
-            'examType' => $q['exam_type'], 'rows' => $rows,
+            'departmentName' => $singleDept ? $groups[0]['departmentName'] : null, 'programName' => null, 'semester' => null,
+            'examType' => $q['exam_type'], 'rows' => $rows, 'groups' => $groups,
         ]);
 
         AuditService::log((int) $user['id'], 'PDF_EXPORT', 'datesheet_date', $q['date'] . '-' . $q['exam_type'], ['cycleId' => $q['cycle_id'], 'filters' => array_intersect_key($q, array_flip(['department_id', 'program_id', 'semester']))], $request->ip);

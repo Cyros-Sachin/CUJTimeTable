@@ -215,7 +215,6 @@ async function refreshGroups() {
         el('div', { class: 'fw-semibold small' }, `${g.program_name} — Semester ${g.semester} ${g.department_code ? `(${g.department_code})` : ''}`),
         el('div', { class: 'text-muted', style: 'font-size:.8rem' }, [
           `${g.course_count} course(s) · ${ddmmyyyy(g.first_date)} – ${ddmmyyyy(g.last_date)}`,
-          g.ref_no ? el('span', { class: `chip ms-1 ${state.exam_type === 'REGULAR' ? 'chip-regular' : 'chip-reappear'}` }, g.ref_no) : '',
         ]),
       ]),
       el('div', { class: 'd-flex gap-2' }, [
