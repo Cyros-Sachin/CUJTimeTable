@@ -191,19 +191,17 @@ class DateSheetController
         $where[] = 'e.exam_date = :examDate';
         $params['examDate'] = $q['date'];
 
-        // Rows are grouped department -> semester. Within one department and semester, a course shared
-        // by several programs (same code, name and slot) prints once, listing the programs it covers.
+        // Rows are grouped department -> program + semester, each with its own sub-heading.
         $entryStmt = $pdo->prepare(
-            'SELECT e.exam_date, e.department_id, d.name AS department_name, e.semester,
-                    e.course_code, e.course_name, ts.label AS time_slot_label, ts.start_time,
-                    GROUP_CONCAT(DISTINCT p.name ORDER BY p.name SEPARATOR \'||\') AS program_names
+            'SELECT e.exam_date, e.department_id, d.name AS department_name, e.program_id, p.name AS program_name,
+                    e.semester, e.course_code, e.course_name, ts.label AS time_slot_label, ts.start_time
              FROM exam_entries e
              JOIN time_slots ts ON ts.id = e.time_slot_id
              JOIN departments d ON d.id = e.department_id
              JOIN programs p ON p.id = e.program_id
              WHERE ' . implode(' AND ', $where) . '
-             GROUP BY e.exam_date, e.department_id, d.name, e.semester, e.course_code, e.course_name, ts.id, ts.label, ts.start_time
-             ORDER BY d.name ASC, e.semester ASC, ts.start_time ASC, e.course_code ASC'
+             GROUP BY e.exam_date, e.department_id, d.name, e.program_id, p.name, e.semester, e.course_code, e.course_name, ts.id, ts.label, ts.start_time
+             ORDER BY d.name ASC, p.name ASC, e.semester ASC, ts.start_time ASC, e.course_code ASC'
         );
         $entryStmt->execute($params);
         $rows = $entryStmt->fetchAll();
@@ -214,19 +212,12 @@ class DateSheetController
         $groups = [];
         foreach ($rows as $row) {
             $deptId = (int) $row['department_id'];
-            $sem = (int) $row['semester'];
+            $key = $row['program_id'] . '|' . $row['semester'];
             $groups[$deptId] ??= ['departmentName' => $row['department_name'], 'semesters' => []];
-            $groups[$deptId]['semesters'][$sem] ??= ['semester' => $sem, 'programs' => [], 'rows' => []];
-            foreach (explode('||', (string) $row['program_names']) as $prog) {
-                $groups[$deptId]['semesters'][$sem]['programs'][$prog] = true;
-            }
-            $groups[$deptId]['semesters'][$sem]['rows'][] = $row;
+            $groups[$deptId]['semesters'][$key] ??= ['programName' => $row['program_name'], 'semester' => (int) $row['semester'], 'rows' => []];
+            $groups[$deptId]['semesters'][$key]['rows'][] = $row;
         }
         foreach ($groups as &$g) {
-            foreach ($g['semesters'] as &$s) {
-                $s['programs'] = array_keys($s['programs']);
-            }
-            unset($s);
             $g['semesters'] = array_values($g['semesters']);
         }
         unset($g);

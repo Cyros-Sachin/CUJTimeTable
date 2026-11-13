@@ -12,7 +12,7 @@
 /** @var string|null $title           overrides the default heading */
 /** @var string $examType */
 /** @var array $rows */
-/** @var array|null $groups          date-wise sheet: [{departmentName, semesters: [{semester, programs[], rows[]}]}] */
+/** @var array|null $groups          date-wise sheet: [{departmentName, semesters: [{programName, semester, rows[]}]}] */
 
 $groups = $groups ?? null;
 $title = $title ?? ('DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cycleMonthYear);
@@ -111,7 +111,7 @@ $showDeptHeadings = $groups && !$departmentName;
           <?php endif; ?>
           <?php foreach ($group['semesters'] as $sem): ?>
           <tr class="sem-head">
-            <td colspan="4">Semester-<?= e(to_roman((int) $sem['semester'])) ?> &mdash; <?= pdf_text(implode(', ', $sem['programs'])) ?></td>
+            <td colspan="4"><?= pdf_text($sem['programName']) ?> &mdash; Semester-<?= e(to_roman((int) $sem['semester'])) ?></td>
           </tr>
             <?php foreach ($sem['rows'] as $row) { $renderRow($row); } ?>
           <?php endforeach; ?>
