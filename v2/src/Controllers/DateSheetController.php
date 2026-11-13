@@ -196,9 +196,11 @@ class DateSheetController
         $where[] = 'e.exam_date = :examDate';
         $params['examDate'] = $q['date'];
 
-        // A course shared by several programs/semesters (same code, name and slot) prints once.
+        // A course shared by several programs/semesters (same code, name and slot) prints once,
+        // listing every semester it is examined in.
         $entryStmt = $pdo->prepare(
-            'SELECT e.exam_date, e.course_code, e.course_name, ts.label AS time_slot_label, ts.start_time
+            'SELECT e.exam_date, e.course_code, e.course_name, ts.label AS time_slot_label, ts.start_time,
+                    GROUP_CONCAT(DISTINCT e.semester ORDER BY e.semester SEPARATOR \',\') AS semesters
              FROM exam_entries e JOIN time_slots ts ON ts.id = e.time_slot_id
              WHERE ' . implode(' AND ', $where) . '
              GROUP BY e.exam_date, e.course_code, e.course_name, ts.id, ts.label, ts.start_time

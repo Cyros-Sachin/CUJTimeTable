@@ -18,6 +18,8 @@ $title = $title ?? ('DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cy
 $programLine = $programName
     ? pdf_text($programName) . ' SEMESTER-' . to_roman((int) $semester) . ($examType === 'REAPPEAR' ? ' (REAPPEAR)' : '')
     : ($examType === 'REAPPEAR' ? '(REAPPEAR)' : '');
+// Date-wise rows carry the semesters each course is examined in; program sheets don't need the column.
+$showSemester = $rows && array_key_exists('semesters', $rows[0]);
 ?>
 <!doctype html>
 <html lang="en">
@@ -45,6 +47,7 @@ $programLine = $programName
   td.date-cell .weekday { font-size: 11px; }
   td.code-cell { text-align: center; white-space: nowrap; }
   td.name-cell { text-align: center; }
+  td.sem-cell { text-align: center; }
   td.time-cell { text-align: center; white-space: nowrap; }
   table.footer { width: 100%; border-collapse: collapse; margin-top: 46px; }
   table.footer td { vertical-align: top; padding: 0; font-size: 13px; }
@@ -82,16 +85,27 @@ $programLine = $programName
   <table class="datesheet">
     <thead>
       <tr>
+        <?php if ($showSemester): ?>
+        <th style="width:15%">Date</th>
+        <th style="width:12%">Semester</th>
+        <th style="width:20%">Course Code</th>
+        <th style="width:32%">Courses Name</th>
+        <th style="width:21%">Time</th>
+        <?php else: ?>
         <th style="width:17%">Date</th>
         <th style="width:23%">Course Code</th>
         <th style="width:36%">Courses Name</th>
         <th style="width:24%">Time</th>
+        <?php endif; ?>
       </tr>
     </thead>
     <tbody>
       <?php foreach ($rows as $row): ?>
       <tr>
         <td class="date-cell"><?= e(ddmmyyyy($row['exam_date'])) ?><br /><span class="weekday">(<?= e(weekday_of($row['exam_date'])) ?>)</span></td>
+        <?php if ($showSemester): ?>
+        <td class="sem-cell"><?= e(implode(', ', array_map(fn ($s) => to_roman((int) $s), explode(',', (string) $row['semesters'])))) ?></td>
+        <?php endif; ?>
         <td class="code-cell">(<?= e($row['course_code']) ?>)</td>
         <td class="name-cell"><?= pdf_text($row['course_name']) ?></td>
         <td class="time-cell"><?= e($row['time_slot_label']) ?></td>
