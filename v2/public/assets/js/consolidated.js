@@ -1,5 +1,6 @@
 import { apiGet, buildQuery } from './api.js';
 import { toast, ddmmyyyy, weekdayOf, examTypeLabel, el } from './ui.js';
+import { bindPdfDownload } from './pdf-options.js';
 
 let meta = null;
 let view = 'list';
@@ -42,6 +43,7 @@ function updateExportLinks() {
 
 async function init() {
   meta = (await apiGet('/meta')).data;
+  bindPdfDownload(document.getElementById('exportZip'));
 
   if (!state.cycle_id && meta.cycles[0]) state.cycle_id = meta.cycles[0].id;
   fillSelect(document.getElementById('cycleSelect'), meta.cycles.map((c) => ({ value: c.id, label: `${c.title} – ${c.month_year}` })), 'Select exam cycle…');

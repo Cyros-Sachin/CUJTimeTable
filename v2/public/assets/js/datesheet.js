@@ -1,5 +1,6 @@
 import { apiGet, apiSend, apiUpload, ApiError, buildQuery } from './api.js';
 import { toast, confirmDialog, ddmmyyyy, weekdayOf, el } from './ui.js';
+import { bindPdfDownload } from './pdf-options.js';
 
 let meta = null;
 let user = null;
@@ -84,6 +85,7 @@ async function init() {
 
   setupUpload();
   setupDateWise();
+  bindPdfDownload(document.getElementById('pdfDownloadLink'));
   await refreshAll();
 }
 
@@ -210,7 +212,10 @@ async function refreshGroups() {
 
   wrap.innerHTML = '';
   const list = el('ul', { class: 'list-unstyled d-flex flex-column gap-2 mb-0' },
-    groups.map((g) => el('li', { class: 'd-flex flex-wrap align-items-center justify-content-between gap-2 border rounded px-3 py-2' }, [
+    groups.map((g) => {
+      const downloadLink = el('a', { href: pdfUrl(g, true), class: 'btn btn-outline-secondary btn-sm' }, [el('i', { class: 'bi bi-download me-1' }), 'Download']);
+      bindPdfDownload(downloadLink);
+      return el('li', { class: 'd-flex flex-wrap align-items-center justify-content-between gap-2 border rounded px-3 py-2' }, [
       el('div', {}, [
         el('div', { class: 'fw-semibold small' }, `${g.program_name} — Semester ${g.semester} ${g.department_code ? `(${g.department_code})` : ''}`),
         el('div', { class: 'text-muted', style: 'font-size:.8rem' }, [
@@ -219,9 +224,10 @@ async function refreshGroups() {
       ]),
       el('div', { class: 'd-flex gap-2' }, [
         el('button', { type: 'button', class: 'btn btn-outline-secondary btn-sm', onclick: () => previewPdf(g) }, [el('i', { class: 'bi bi-eye me-1' }), 'Preview PDF']),
-        el('a', { href: pdfUrl(g, true), class: 'btn btn-outline-secondary btn-sm' }, [el('i', { class: 'bi bi-download me-1' }), 'Download']),
+        downloadLink,
       ]),
-    ])));
+    ]);
+    }));
   wrap.appendChild(list);
 }
 
@@ -256,6 +262,7 @@ function updateDateWiseButtons() {
 
 function setupDateWise() {
   document.getElementById('dateWiseSelect').addEventListener('change', updateDateWiseButtons);
+  bindPdfDownload(document.getElementById('dateWiseDownloadBtn'));
   document.getElementById('dateWisePreviewBtn').addEventListener('click', () => {
     const date = document.getElementById('dateWiseSelect').value;
     if (!date) return;

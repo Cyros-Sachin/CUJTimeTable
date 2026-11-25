@@ -10,6 +10,7 @@ use App\Controllers\DateSheetController;
 use App\Controllers\EntryController;
 use App\Controllers\MetaController;
 use App\Controllers\PageController;
+use App\Controllers\ProgramSheetController;
 use App\Controllers\UploadController;
 use App\Core\Db;
 use App\Core\Response;
@@ -55,6 +56,8 @@ $router->get('/api/entries/{id}', [EntryController::class, 'show']);
 $router->get('/api/datesheets/pdf', [DateSheetController::class, 'pdf']);
 $router->get('/api/datesheets/dates', [DateSheetController::class, 'dates']);
 $router->get('/api/datesheets/date-pdf', [DateSheetController::class, 'datePdf']);
+$router->get('/api/datesheets/program-summary', [ProgramSheetController::class, 'summary']);
+$router->get('/api/datesheets/program-pdf', [ProgramSheetController::class, 'pdf']);
 $router->get('/api/datesheets', [DateSheetController::class, 'index']);
 
 // ---- Consolidated (EXAM_CELL) --------------------------------------------
@@ -119,6 +122,7 @@ $router->get('/change-password', [PageController::class, 'changePassword']);
 $router->get('/dashboard', [PageController::class, 'dashboard']);
 $router->get('/entries/new', [PageController::class, 'entryForm']);
 $router->get('/entries/{id}/edit', [PageController::class, 'entryForm']);
+$router->get('/datesheets/program', [PageController::class, 'programDatesheet']);
 $router->get('/datesheets', [PageController::class, 'datesheets']);
 $router->get('/consolidated', [PageController::class, 'consolidated']);
 $router->get('/admin', [PageController::class, 'admin']);

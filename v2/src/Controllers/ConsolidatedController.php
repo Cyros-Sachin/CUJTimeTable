@@ -21,6 +21,8 @@ class ConsolidatedController
         $f = $request->query;
         $f['page'] = (int) ($f['page'] ?? 1);
         $f['page_size'] = (int) ($f['page_size'] ?? 20);
+        // PDF extras are not filters; read via pdf_extras() and kept out of audit filter logs.
+        unset($f['serial'], $f['note']);
         return $f;
     }
 
@@ -103,11 +105,13 @@ class ConsolidatedController
             throw new HttpException(404, 'NOT_FOUND', 'No entries match these filters');
         }
 
+        $extras = pdf_extras($user, $request->query);
         $pdfBinary = PdfService::renderOverallPdf([
             'cycleTitle' => $rows[0]['cycle_title'], 'cycleMonthYear' => $rows[0]['cycle_month_year'], 'rows' => $rows,
+            'issuedOn' => date('Y-m-d'), 'serial' => $extras['serial'], 'note' => $extras['note'],
         ]);
 
-        AuditService::log((int) $user['id'], 'EXPORT_PDF_OVERALL', 'consolidated', null, $filters, $request->ip);
+        AuditService::log((int) $user['id'], 'EXPORT_PDF_OVERALL', 'consolidated', null, $filters + ['serial' => $extras['serial']], $request->ip);
 
         Response::streamPdf($pdfBinary, 'CUJ_Overall_Datesheet.pdf', false);
     }
@@ -144,9 +148,10 @@ class ConsolidatedController
                 'examType' => $group['examType'], 'rows' => $group['rows'],
             ];
         }
-        $pdfBinary = PdfService::renderCombinedDatesheetPdf($paramsList);
+        $extras = pdf_extras($user, $request->query);
+        $pdfBinary = PdfService::renderCombinedDatesheetPdf($paramsList, $extras);
 
-        AuditService::log((int) $user['id'], 'EXPORT_ALL_PDF', 'consolidated', null, $filters, $request->ip);
+        AuditService::log((int) $user['id'], 'EXPORT_ALL_PDF', 'consolidated', null, $filters + ['serial' => $extras['serial']], $request->ip);
 
         Response::streamPdf($pdfBinary, 'CUJ_All_Datesheets.pdf', true);
     }

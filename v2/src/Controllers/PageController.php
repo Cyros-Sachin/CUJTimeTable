@@ -65,6 +65,15 @@ class PageController
         Response::html(View::render('datesheet', ['pageTitle' => 'Date Sheet', 'activeNav' => 'datesheets', 'user' => $user]));
     }
 
+    public function programDatesheet(Request $request): void
+    {
+        $user = self::requirePageLogin();
+        if (!in_array($user['role'], ['DEPT_COORDINATOR', 'EXAM_CELL'], true)) {
+            Response::forbiddenPage();
+        }
+        Response::html(View::render('program-datesheet', ['pageTitle' => 'Program Date Sheet', 'activeNav' => 'program-datesheet', 'user' => $user]));
+    }
+
     public function consolidated(Request $request): void
     {
         $user = self::requirePageLogin();

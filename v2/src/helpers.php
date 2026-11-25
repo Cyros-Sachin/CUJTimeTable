@@ -84,6 +84,38 @@ if (!function_exists('to_roman')) {
     }
 }
 
+if (!function_exists('pdf_extras')) {
+    /**
+     * Optional admin-only PDF extras from the query string: a serial number appended to the
+     * reference line and a note printed at the end of the document. Anyone other than the
+     * Exam Cell gets both as null (silently ignored). Blank -> null; overlong input is truncated.
+     *
+     * @return array{serial: ?string, note: ?string}
+     */
+    function pdf_extras(array $user, array $query): array
+    {
+        $out = ['serial' => null, 'note' => null];
+        if (($user['role'] ?? null) !== 'EXAM_CELL') {
+            return $out;
+        }
+        foreach (['serial' => 60, 'note' => 2000] as $key => $max) {
+            $raw = $query[$key] ?? null;
+            if (!is_string($raw)) {
+                continue;
+            }
+            $value = trim(str_replace(["\r\n", "\r"], "\n", $raw));
+            if ($key === 'serial') {
+                $value = trim((string) preg_replace('/\s+/u', ' ', $value));
+            }
+            if ($value === '') {
+                continue;
+            }
+            $out[$key] = mb_substr($value, 0, $max);
+        }
+        return $out;
+    }
+}
+
 if (!function_exists('exam_type_label')) {
     function exam_type_label(string $type): string
     {

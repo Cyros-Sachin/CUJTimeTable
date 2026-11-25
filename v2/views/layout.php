@@ -9,6 +9,7 @@ use App\Core\View;
 $pageScripts = [
     'entries' => 'entry-form.js',
     'datesheets' => 'datesheet.js',
+    'program-datesheet' => 'program-datesheet.js',
     'consolidated' => 'consolidated.js',
     'admin' => 'admin.js',
     'dashboard' => 'dashboard.js',

@@ -6,6 +6,7 @@ $items = [
     ['nav' => 'dashboard', 'href' => '/dashboard', 'icon' => 'bi-speedometer2', 'label' => 'Dashboard', 'roles' => ['DEPT_COORDINATOR', 'EXAM_CELL']],
     ['nav' => 'entries', 'href' => '/entries/new', 'icon' => 'bi-file-earmark-plus', 'label' => 'Add Entry', 'roles' => ['DEPT_COORDINATOR', 'EXAM_CELL']],
     ['nav' => 'datesheets', 'href' => '/datesheets', 'icon' => 'bi-calendar3', 'label' => 'Date Sheet', 'roles' => ['DEPT_COORDINATOR', 'EXAM_CELL']],
+    ['nav' => 'program-datesheet', 'href' => '/datesheets/program', 'icon' => 'bi-journal-text', 'label' => 'Program Date Sheet', 'roles' => ['DEPT_COORDINATOR', 'EXAM_CELL']],
     ['nav' => 'consolidated', 'href' => '/consolidated', 'icon' => 'bi-table', 'label' => 'Consolidated', 'roles' => ['EXAM_CELL']],
     ['nav' => 'admin', 'href' => '/admin', 'icon' => 'bi-gear', 'label' => 'Admin', 'roles' => ['EXAM_CELL']],
 ];

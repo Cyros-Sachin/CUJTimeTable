@@ -2,7 +2,13 @@
 /** @var string $cycleTitle */
 /** @var string $cycleMonthYear */
 /** @var array $rows */
+/** @var string|null $issuedOn */
+/** @var string|null $serial  admin-only serial number appended to the ref line */
+/** @var string|null $note    admin-only note printed at the end of the document */
 
+$issuedOn = $issuedOn ?? date('Y-m-d');
+$serial = $serial ?? null;
+$note = $note ?? null;
 $title = 'DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cycleMonthYear . ' (ALL DEPARTMENTS)';
 ?>
 <!doctype html>
@@ -26,6 +32,9 @@ $title = 'DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cycleMonthYea
   td.num { text-align: right; }
   td.center { text-align: center; }
   tr.total-row td { font-weight: bold; background: #f0f0f0; }
+  table.refrow { width: 100%; border-collapse: collapse; font-size: 11px; margin: 4px 0; }
+  table.refrow td { padding: 0; }
+  .doc-note { margin-top: 14px; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -36,6 +45,14 @@ $title = 'DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cycleMonthYea
     <tr><td class="l4">Rahya-Suchani (Bagla), Samba-181143, Jammu</td></tr>
   </table>
   <hr class="rule" />
+  <?php if ($serial !== null): ?>
+  <table class="refrow">
+    <tr>
+      <td style="text-align:left"><?= e($serial) ?></td>
+      <td style="text-align:right"><?= e(long_date($issuedOn)) ?></td>
+    </tr>
+  </table>
+  <?php endif; ?>
   <div class="title"><?= pdf_text($title) ?></div>
 
   <table class="overall">
@@ -82,5 +99,10 @@ $title = 'DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cycleMonthYea
       <?php endforeach; $flush(); ?>
     </tbody>
   </table>
+  <?php if ($note !== null && $note !== ''): ?>
+  <div class="doc-note">
+    <?= nl2br(pdf_text($note)) ?>
+  </div>
+  <?php endif; ?>
 </body>
 </html>

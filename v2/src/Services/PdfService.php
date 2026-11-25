@@ -72,15 +72,29 @@ class PdfService
         ]);
     }
 
-    /** @param array[] $paramsList each as accepted by renderDatesheetPdf(); one datesheet per page group. */
-    public static function renderCombinedDatesheetPdf(array $paramsList): string
+    /**
+     * @param array[] $paramsList each as accepted by renderDatesheetPdf(); one datesheet per page group.
+     * @param array{serial?: ?string, note?: ?string} $extras serial goes on every datesheet's ref row;
+     *        the note is printed only once, at the end of the final datesheet.
+     */
+    public static function renderCombinedDatesheetPdf(array $paramsList, array $extras = []): string
     {
         $settings = self::settings();
         $mpdf = self::newMpdf('A4');
+        $paramsList = array_values($paramsList);
+        $last = count($paramsList) - 1;
+        $note = $extras['note'] ?? null;
+        foreach ($paramsList as $params) {
+            if ($note === null && !empty($params['note'])) {
+                $note = $params['note'];
+            }
+        }
         foreach ($paramsList as $i => $params) {
             if ($i > 0) {
                 $mpdf->AddPage();
             }
+            $params['serial'] = $params['serial'] ?? ($extras['serial'] ?? null);
+            $params['note'] = $i === $last ? $note : null;
             $mpdf->WriteHTML(self::datesheetHtml($params, $settings));
         }
         return $mpdf->Output('', 'S');
@@ -110,6 +124,8 @@ class PdfService
             'rows' => $params['rows'],
             'title' => $params['title'] ?? null,
             'groups' => $params['groups'] ?? null,
+            'serial' => $params['serial'] ?? null,
+            'note' => $params['note'] ?? null,
         ]);
     }
 
@@ -119,6 +135,9 @@ class PdfService
             'cycleTitle' => $params['cycleTitle'],
             'cycleMonthYear' => $params['cycleMonthYear'],
             'rows' => $params['rows'],
+            'issuedOn' => $params['issuedOn'] ?? date('Y-m-d'),
+            'serial' => $params['serial'] ?? null,
+            'note' => $params['note'] ?? null,
         ]);
 
         $mpdf = self::newMpdf('A4-L');

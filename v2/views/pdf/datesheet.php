@@ -13,11 +13,16 @@
 /** @var string $examType */
 /** @var array $rows */
 /** @var array|null $groups          date-wise sheet: [{departmentName, semesters: [{programName, semester, rows[]}]}] */
+/** @var string|null $serial         admin-only serial number appended to the ref line */
+/** @var string|null $note           admin-only note printed at the end of the document */
 
 $groups = $groups ?? null;
+$serial = $serial ?? null;
+$note = $note ?? null;
 $title = $title ?? ('DATE SHEET FOR ' . mb_strtoupper($cycleTitle) . ' - ' . $cycleMonthYear);
+$reappearSuffix = $examType === 'REAPPEAR' ? ' (REAPPEAR)' : '';
 $programLine = $programName
-    ? pdf_text($programName) . ' SEMESTER-' . to_roman((int) $semester) . ($examType === 'REAPPEAR' ? ' (REAPPEAR)' : '')
+    ? pdf_text($programName) . ($semester ? ' SEMESTER-' . to_roman((int) $semester) : '') . $reappearSuffix
     : ($examType === 'REAPPEAR' ? '(REAPPEAR)' : '');
 // Department sub-headings only when the date-wise sheet spans more than the department in the heading.
 $showDeptHeadings = $groups && !$departmentName;
@@ -58,6 +63,8 @@ $showDeptHeadings = $groups && !$departmentName;
   .sign-block img { height: 50px; }
   .sign-block .controller-name { font-weight: bold; }
   .sign-block .controller-title { font-weight: bold; margin-top: 2px; }
+  table.datesheet tr.group-gap td { border: none; padding: 0; height: 18px; }
+  .doc-note { margin-top: 18px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -76,7 +83,7 @@ $showDeptHeadings = $groups && !$departmentName;
   <hr class="rule" />
   <table class="refrow">
     <tr>
-      <td style="text-align:left">CUJ/Exam/Datesheet/<?= e(date('Y', strtotime($issuedOn))) ?>/</td>
+      <td style="text-align:left"><?= $serial !== null ? e($serial) : e("CUJ/Exam/Datesheet/" . date("Y", strtotime($issuedOn)) . "/") ?></td>
       <td style="text-align:right"><?= e(long_date($issuedOn)) ?></td>
     </tr>
   </table>
@@ -105,13 +112,19 @@ $showDeptHeadings = $groups && !$departmentName;
       <?php };
       ?>
       <?php if ($groups): ?>
+        <?php $groupIndex = 0; ?>
         <?php foreach ($groups as $group): ?>
           <?php if ($showDeptHeadings): ?>
+          <?php if ($groupIndex > 0): ?><tr class="group-gap"><td colspan="4">&nbsp;</td></tr><?php endif; ?>
           <tr class="dept-head"><td colspan="4"><?= pdf_text(mb_strtoupper($group['departmentName'])) ?></td></tr>
           <?php endif; ?>
-          <?php foreach ($group['semesters'] as $sem): ?>
+          <?php foreach ($group['semesters'] as $semIndex => $sem): ?>
+          <?php if ($groupIndex > 0 && !($showDeptHeadings && $semIndex === 0)): ?>
+          <tr class="group-gap"><td colspan="4">&nbsp;</td></tr>
+          <?php endif; ?>
+          <?php $groupIndex++; ?>
           <tr class="sem-head">
-            <td colspan="4"><?= pdf_text($sem['programName']) ?> &mdash; Semester-<?= e(to_roman((int) $sem['semester'])) ?></td>
+            <td colspan="4"><?= pdf_text($sem['programName']) ?><?php if (!empty($sem['semester'])): ?> &mdash; Semester-<?= e(to_roman((int) $sem['semester'])) ?><?php endif; ?></td>
           </tr>
             <?php foreach ($sem['rows'] as $row) { $renderRow($row); } ?>
           <?php endforeach; ?>
@@ -138,5 +151,10 @@ $showDeptHeadings = $groups && !$departmentName;
       </td>
     </tr>
   </table>
+  <?php if ($note !== null && $note !== ''): ?>
+  <div class="doc-note">
+    <?= nl2br(pdf_text($note)) ?>
+  </div>
+  <?php endif; ?>
 </body>
 </html>

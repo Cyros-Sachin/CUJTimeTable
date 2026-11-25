@@ -65,6 +65,7 @@ class DateSheetController
             'download' => ['int'],
         ]);
         $download = (bool) ($q['download'] ?? 0);
+        $extras = pdf_extras($user, $request->query);
 
         $pdo = Db::conn();
         $progStmt = $pdo->prepare(
@@ -103,9 +104,10 @@ class DateSheetController
             'issuedOn' => date('Y-m-d'), 'cycleTitle' => $cycle['title'], 'cycleMonthYear' => $cycle['month_year'],
             'departmentName' => $program['department_name'], 'programName' => $program['name'], 'semester' => $q['semester'],
             'examType' => $q['exam_type'], 'rows' => $rows,
+            'serial' => $extras['serial'], 'note' => $extras['note'],
         ]);
 
-        AuditService::log((int) $user['id'], 'PDF_EXPORT', 'datesheet', $q['program_id'] . '-' . $q['semester'] . '-' . $q['exam_type'], ['cycleId' => $q['cycle_id']], $request->ip);
+        AuditService::log((int) $user['id'], 'PDF_EXPORT', 'datesheet', $q['program_id'] . '-' . $q['semester'] . '-' . $q['exam_type'], ['cycleId' => $q['cycle_id'], 'serial' => $extras['serial']], $request->ip);
 
         $examLabel = $q['exam_type'] === 'REAPPEAR' ? 'Reappear' : 'Regular';
         $cycleSlug = preg_replace('/[,\s]+/', '-', $cycle['month_year']);
@@ -178,6 +180,7 @@ class DateSheetController
             'download' => ['int'],
         ]);
         $download = (bool) ($q['download'] ?? 0);
+        $extras = pdf_extras($user, $request->query);
 
         $pdo = Db::conn();
         $cycleStmt = $pdo->prepare('SELECT id, title, month_year FROM exam_cycles WHERE id = :id');
@@ -232,9 +235,10 @@ class DateSheetController
             'title' => 'DATE SHEET FOR ' . mb_strtoupper(long_date($q['date'])),
             'departmentName' => $singleDept ? $groups[0]['departmentName'] : null, 'programName' => null, 'semester' => null,
             'examType' => $q['exam_type'], 'rows' => $rows, 'groups' => $groups,
+            'serial' => $extras['serial'], 'note' => $extras['note'],
         ]);
 
-        AuditService::log((int) $user['id'], 'PDF_EXPORT', 'datesheet_date', $q['date'] . '-' . $q['exam_type'], ['cycleId' => $q['cycle_id'], 'filters' => array_intersect_key($q, array_flip(['department_id', 'program_id', 'semester']))], $request->ip);
+        AuditService::log((int) $user['id'], 'PDF_EXPORT', 'datesheet_date', $q['date'] . '-' . $q['exam_type'], ['cycleId' => $q['cycle_id'], 'filters' => array_intersect_key($q, array_flip(['department_id', 'program_id', 'semester'])), 'serial' => $extras['serial']], $request->ip);
 
         $examLabel = $q['exam_type'] === 'REAPPEAR' ? 'Reappear' : 'Regular';
         $filename = "Datesheet_{$q['date']}_{$examLabel}.pdf";
