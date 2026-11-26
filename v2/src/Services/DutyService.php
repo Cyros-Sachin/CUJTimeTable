@@ -156,14 +156,57 @@ class DutyService
         return $out;
     }
 
-    /** @return array<string,array<int,array{id:int,room:string,students:int}>> seating per "date|slotId", in seating order */
+    /** @return array<string,array<int,array{id:int,room:string,students:int,course_codes:string[]}>> seating per "date|slotId", in seating order */
     private static function rooms(PDO $pdo, int $rosterId): array
     {
-        $stmt = $pdo->prepare('SELECT id, exam_date, time_slot_id, room, students FROM duty_rooms WHERE roster_id = :r ORDER BY exam_date, time_slot_id, sort_order, id');
+        $stmt = $pdo->prepare('SELECT id, exam_date, time_slot_id, room, students, course_codes FROM duty_rooms WHERE roster_id = :r ORDER BY exam_date, time_slot_id, sort_order, id');
         $stmt->execute(['r' => $rosterId]);
         $out = [];
         foreach ($stmt->fetchAll() as $r) {
-            $out[self::key($r['exam_date'], (int) $r['time_slot_id'])][] = ['id' => (int) $r['id'], 'room' => $r['room'], 'students' => (int) $r['students']];
+            $out[self::key($r['exam_date'], (int) $r['time_slot_id'])][] = [
+                'id' => (int) $r['id'], 'room' => $r['room'], 'students' => (int) $r['students'],
+                'course_codes' => self::splitCodes((string) $r['course_codes']),
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * "ucse0o001t,  IPHY1C02 ; IECO1C01 / IECO1C001T" -> ['UCSE0O001T', 'IPHY1C02', 'IECO1C01/IECO1C001T'].
+     * Separated by comma, semicolon or new line only: the date sheet has combined old/new codes joined by "/".
+     */
+    public static function splitCodes(?string $raw): array
+    {
+        $codes = [];
+        foreach (preg_split('/[,;\r\n]+/', strtoupper((string) $raw)) ?: [] as $code) {
+            $code = (string) preg_replace('/\s*\/\s*/', '/', trim((string) preg_replace('/\s+/', ' ', $code)));
+            if ($code !== '') {
+                $codes[] = $code;
+            }
+        }
+        return array_values(array_unique($codes));
+    }
+
+    /** @return array<string,array<string,string>> course code -> course name, per "date|slotId" of the cycle */
+    private static function slotCourses(PDO $pdo, int $cycleId): array
+    {
+        $stmt = $pdo->prepare('SELECT exam_date, time_slot_id, course_code, MIN(course_name) AS course_name FROM exam_entries WHERE exam_cycle_id = :c GROUP BY exam_date, time_slot_id, course_code');
+        $stmt->execute(['c' => $cycleId]);
+        $out = [];
+        foreach ($stmt->fetchAll() as $e) {
+            $out[self::key($e['exam_date'], (int) $e['time_slot_id'])][strtoupper($e['course_code'])] = $e['course_name'];
+        }
+        return $out;
+    }
+
+    /** [{code, name}] for a room's codes; codes no longer on the date sheet for that slot are dropped. */
+    private static function roomCourses(array $room, array $courses): array
+    {
+        $out = [];
+        foreach ($room['course_codes'] as $code) {
+            if (isset($courses[$code])) {
+                $out[] = ['code' => $code, 'name' => $courses[$code]];
+            }
         }
         return $out;
     }
@@ -230,6 +273,8 @@ class DutyService
         $overrides = self::overrides($pdo, $roster['id']);
         $roomsByKey = self::rooms($pdo, $roster['id']);
         $assignments = self::assignments($pdo, $roster['id']);
+        $courses = self::slotCourses($pdo, $cycleId);
+        $roomById = [];
 
         $byKey = [];
         $orphans = [];
@@ -262,6 +307,8 @@ class DutyService
                     $people = array_values(array_filter($inv, fn ($a) => $a['room_id'] === $r['id']));
                     $short = max(0, $need - count($people));
                     $roomShort += $short;
+                    $r['courses'] = self::roomCourses($r, $courses[$k] ?? []);
+                    $roomById[$r['id']] = $r;
                     $rooms[] = $r + ['required' => $need, 'invigilators' => $people, 'shortfall' => $short];
                 }
                 $required = array_sum(array_column($rooms, 'required'));
@@ -327,6 +374,7 @@ class DutyService
                 'assignment_id' => $a['id'], 'exam_date' => $a['exam_date'], 'weekday' => weekday_of($a['exam_date']),
                 'time_slot_id' => $a['time_slot_id'], 'time_slot_label' => $slots[$k]['time_slot_label'],
                 'start_time' => $slots[$k]['start_time'], 'role' => $a['role'], 'room' => $a['room_name'],
+                'courses' => $a['room_id'] !== null ? ($roomById[$a['room_id']]['courses'] ?? []) : [],
             ];
             unset($l);
         }
@@ -419,7 +467,8 @@ class DutyService
 
     /**
      * Replace the seating of several slots at once (one transaction).
-     * $seating: list of [exam_date, time_slot_id, rooms => [[room, students], ...]]. An empty room list
+     * $seating: list of [exam_date, time_slot_id, rooms => [[room, students, ?course codes], ...]]. Course codes
+     * are optional and must be papers of that date + session. An empty room list
      * clears that slot's seating. Rooms whose name is unchanged keep their id, so invigilators already
      * posted there stay posted; removed rooms release their invigilators (room_id -> NULL).
      *
@@ -432,12 +481,13 @@ class DutyService
             self::assertEditable($roster);
             $slots = self::examSlots($cycleId, $pdo);
             $existing = self::rooms($pdo, $roster['id']);
+            $courses = self::slotCourses($pdo, $cycleId);
 
             $ins = $pdo->prepare(
-                'INSERT INTO duty_rooms (roster_id, exam_date, time_slot_id, room, students, sort_order)
-                 VALUES (:r, :d, :s, :room, :students, :o)'
+                'INSERT INTO duty_rooms (roster_id, exam_date, time_slot_id, room, students, course_codes, sort_order)
+                 VALUES (:r, :d, :s, :room, :students, :codes, :o)'
             );
-            $upd = $pdo->prepare('UPDATE duty_rooms SET students = :students, sort_order = :o, room = :room WHERE id = :id');
+            $upd = $pdo->prepare('UPDATE duty_rooms SET students = :students, course_codes = :codes, sort_order = :o, room = :room WHERE id = :id');
             $del = $pdo->prepare('DELETE FROM duty_rooms WHERE id = :id');
             $roomCount = 0;
             foreach ($seating as $entry) {
@@ -450,16 +500,26 @@ class DutyService
                     $current[mb_strtolower($r['room'])] = $r['id'];
                 }
                 $keep = [];
-                foreach (array_values($entry['rooms']) as $i => [$room, $students]) {
+                foreach (array_values($entry['rooms']) as $i => $spec) {
+                    [$room, $students] = $spec;
                     $lk = mb_strtolower($room);
                     if (isset($keep[$lk])) {
                         throw new HttpException(422, 'VALIDATION', "Room \"{$room}\" is listed twice for " . ddmmyyyy($entry['exam_date']));
                     }
+                    $codes = self::splitCodes($spec[2] ?? '');
+                    $unknown = array_diff($codes, array_keys($courses[$k] ?? []));
+                    if ($unknown) {
+                        throw new HttpException(422, 'VALIDATION', 'No paper ' . implode(', ', $unknown) . ' on ' . ddmmyyyy($entry['exam_date']) . " in that session (room \"{$room}\")");
+                    }
+                    $codeText = $codes ? implode(', ', $codes) : null;
+                    if ($codeText !== null && mb_strlen($codeText) > 1000) {
+                        throw new HttpException(422, 'VALIDATION', "Too many course codes for room \"{$room}\"");
+                    }
                     if (isset($current[$lk])) {
-                        $upd->execute(['students' => $students, 'o' => $i, 'room' => $room, 'id' => $current[$lk]]);
+                        $upd->execute(['students' => $students, 'codes' => $codeText, 'o' => $i, 'room' => $room, 'id' => $current[$lk]]);
                         $keep[$lk] = $current[$lk];
                     } else {
-                        $ins->execute(['r' => $roster['id'], 'd' => $entry['exam_date'], 's' => (int) $entry['time_slot_id'], 'room' => $room, 'students' => $students, 'o' => $i]);
+                        $ins->execute(['r' => $roster['id'], 'd' => $entry['exam_date'], 's' => (int) $entry['time_slot_id'], 'room' => $room, 'students' => $students, 'codes' => $codeText, 'o' => $i]);
                         $keep[$lk] = (int) $pdo->lastInsertId();
                     }
                     $roomCount++;
@@ -480,7 +540,7 @@ class DutyService
         $pdo = Db::conn();
         $roster = self::roster($cycleId, $pdo);
         $stmt = $pdo->prepare(
-            'SELECT r.exam_date, t.label AS time_slot_label, r.room, r.students
+            'SELECT r.exam_date, t.label AS time_slot_label, r.room, r.students, r.course_codes
              FROM duty_rooms r JOIN time_slots t ON t.id = r.time_slot_id
              WHERE r.roster_id = :r ORDER BY r.exam_date, t.start_time, r.sort_order, r.id'
         );

@@ -26,16 +26,20 @@ $examName = $cycle['title'] . ' - ' . $cycle['month_year'];
   .l2 { font-size: 19px; font-weight: bold; }
   .l3, .l4 { font-size: 12px; }
   .rule { border: none; border-top: 1.5px solid #000; margin: 4px 0; }
-  table.refrow { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0 14px; }
+  table.refrow { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0 10px; }
   table.refrow td { padding: 0; }
   .to-block div { margin: 1px 0; }
-  .subject { margin: 16px 0 12px; font-weight: bold; }
-  .body-text { text-align: justify; line-height: 1.5; margin-bottom: 12px; }
+  .subject { margin: 12px 0 8px; font-weight: bold; }
+  .body-text { text-align: justify; line-height: 1.45; margin-bottom: 8px; }
   table.duties { width: 100%; border-collapse: collapse; margin: 6px 0 14px; }
-  table.duties th, table.duties td { border: 1px solid #000; padding: 6px 8px; font-size: 12.5px; text-align: center; }
+  table.duties th, table.duties td { border: 1px solid #000; padding: 4px 5px; font-size: 12px; text-align: center; }
   table.duties th { background: #e5e7eb; }
+  table.duties tr.duty-main td { border-bottom: none; }
+  table.duties tr.duty-course td { text-align: left; font-size: 11.5px; padding: 3px 8px 6px; border-top: 1px dotted #888; }
+  table.duties tr { page-break-inside: avoid; }
+  .course-label { color: #333; }
   ol.instructions { margin: 4px 0 0 18px; padding: 0; font-size: 12px; line-height: 1.5; }
-  table.footer { width: 100%; border-collapse: collapse; margin-top: 36px; }
+  table.footer { width: 100%; border-collapse: collapse; margin-top: 22px; }
   table.footer td { vertical-align: top; padding: 0; font-size: 13px; }
   .sign-block { text-align: center; }
   .sign-block img { height: 50px; }
@@ -82,17 +86,29 @@ $examName = $cycle['title'] . ' - ' . $cycle['month_year'];
 
   <table class="duties">
     <thead>
-      <tr><th style="width:7%">S.No</th><th style="width:17%">Date</th><th style="width:16%">Day</th><th style="width:22%">Time</th><th style="width:18%">Room / Class</th><th style="width:20%">Duty</th></tr>
+      <tr><th style="width:8%">S.No.</th><th style="width:16%">Date</th><th style="width:15%">Day</th><th style="width:21%">Time</th><th style="width:22%">Room / Class</th><th style="width:18%">Duty</th></tr>
     </thead>
     <tbody>
       <?php foreach ($person['duties'] as $i => $d): ?>
-      <tr>
-        <td><?= $i + 1 ?></td>
+      <tr class="duty-main">
+        <td rowspan="2"><?= $i + 1 ?></td>
         <td><?= e(ddmmyyyy($d['exam_date'])) ?></td>
         <td><?= e($d['weekday']) ?></td>
         <td><?= e($d['time_slot_label']) ?></td>
         <td><?= $d['room'] ? pdf_text($d['room']) : '&ndash;' ?></td>
         <td><?= $d['role'] === 'RESERVE' ? 'Reserve Invigilator' : 'Invigilator' ?></td>
+      </tr>
+      <tr class="duty-course">
+        <td colspan="5">
+          <span class="course-label">Course Code &amp; Name:</span>
+          <?php if (!empty($d['courses'])): ?>
+            <?= implode('; ', array_map(static fn ($c) => '<b>' . e($c['code']) . '</b> &ndash; ' . pdf_text($c['name']), $d['courses'])) ?>
+          <?php elseif ($d['role'] === 'RESERVE'): ?>
+            As directed by the Centre Superintendent
+          <?php else: ?>
+            As per the seating plan of the room
+          <?php endif; ?>
+        </td>
       </tr>
       <?php endforeach; ?>
     </tbody>

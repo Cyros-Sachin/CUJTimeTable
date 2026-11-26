@@ -145,10 +145,11 @@ async function addToSlot(slot, role, room = null) {
 // ---- Seating allotment ------------------------------------------------------------------
 
 let seatingModalEl = null;
-function seatingRow(room = '', students = '') {
+function seatingRow(room = '', students = '', courses = '') {
   return el('tr', {}, [
     el('td', {}, el('input', { type: 'text', class: 'form-control form-control-sm', 'data-f': 'room', maxlength: '60', value: room, placeholder: 'e.g. Room 101' })),
-    el('td', { style: 'width: 8rem' }, el('input', { type: 'number', class: 'form-control form-control-sm', 'data-f': 'students', min: '1', max: '1000', value: String(students) })),
+    el('td', { style: 'width: 7rem' }, el('input', { type: 'number', class: 'form-control form-control-sm', 'data-f': 'students', min: '1', max: '1000', value: String(students) })),
+    el('td', {}, el('input', { type: 'text', class: 'form-control form-control-sm', 'data-f': 'courses', maxlength: '1000', value: courses, placeholder: 'optional, e.g. UCSE0O001T' })),
     el('td', { class: 'small text-muted text-nowrap', 'data-f': 'need' }),
     el('td', { class: 'text-end' }, el('button', { type: 'button', class: 'btn btn-sm btn-link text-danger p-0', title: 'Remove row', 'data-f': 'del' }, el('i', { class: 'bi bi-x-lg' }))),
   ]);
@@ -162,7 +163,7 @@ async function editSeating(slot) {
       el('div', { class: 'modal-body' }, [
         el('p', { class: 'small text-muted', 'data-role': 'hint' }),
         el('table', { class: 'table table-sm align-middle mb-2' }, [
-          el('thead', {}, el('tr', {}, ['Room / Class', 'Students', 'Teachers', ''].map((h) => el('th', {}, h)))),
+          el('thead', {}, el('tr', {}, ['Room / Class', 'Students', 'Course codes', 'Teachers', ''].map((h) => el('th', {}, h)))),
           el('tbody', { 'data-role': 'rows' }),
         ]),
         el('div', { class: 'd-flex justify-content-between align-items-center' }, [
@@ -184,10 +185,10 @@ async function editSeating(slot) {
   const r = overview.roster;
   const tbody = q('rows');
   q('title').textContent = `Seating · ${ddmmyyyy(slot.exam_date)} (${slot.weekday}) ${slot.time_slot_label}`;
-  q('hint').textContent = `${slot.total_students} students registered in this session. Each room gets ${r.per_room_small} teacher(s), or ${r.per_room_large} if it seats more than ${r.room_threshold}.`;
+  q('hint').textContent = `${slot.total_students} students registered in this session. Each room gets ${r.per_room_small} teacher(s), or ${r.per_room_large} if it seats more than ${r.room_threshold}. Course codes are optional; the duty letters print them.`;
   q('error').textContent = '';
   tbody.innerHTML = '';
-  (slot.rooms.length ? slot.rooms : [{ room: '', students: '' }]).forEach((x) => tbody.appendChild(seatingRow(x.room, x.students)));
+  (slot.rooms.length ? slot.rooms : [{ room: '', students: '' }]).forEach((x) => tbody.appendChild(seatingRow(x.room, x.students, (x.course_codes || []).join(', '))));
 
   const refresh = () => {
     let seated = 0;
@@ -226,7 +227,11 @@ async function editSeating(slot) {
   };
   const onSave = () => {
     const rooms = [...tbody.querySelectorAll('tr')]
-      .map((tr) => ({ room: tr.querySelector('[data-f="room"]').value.trim(), students: Number(tr.querySelector('[data-f="students"]').value) }))
+      .map((tr) => ({
+        room: tr.querySelector('[data-f="room"]').value.trim(),
+        students: Number(tr.querySelector('[data-f="students"]').value),
+        courses: tr.querySelector('[data-f="courses"]').value.trim(),
+      }))
       .filter((x) => x.room || x.students);
     if (!rooms.length) { q('error').textContent = 'Add at least one room, or use Clear seating.'; return; }
     save(rooms);
@@ -491,9 +496,12 @@ function addButton(slot, role, room = null) {
 function invigilatorsCell(s) {
   if (!s.has_seating) return [...s.invigilators.map((a) => dutyChip(s, a)), addButton(s, 'INVIGILATOR')];
   const blocks = s.rooms.map((room) => el('div', { class: 'd-flex flex-wrap align-items-start gap-1 py-1 border-bottom' }, [
-    el('div', { class: 'small text-nowrap me-1', style: 'min-width: 9.5rem' }, [
-      el('span', { class: 'fw-semibold' }, room.room), ` · ${room.students} st. · `,
+    el('div', { class: 'small me-1', style: 'min-width: 9.5rem; max-width: 14rem' }, [
+      el('span', { class: 'fw-semibold text-nowrap' }, room.room), ` · ${room.students} st. · `,
       el('span', { class: room.shortfall ? 'text-danger fw-semibold' : 'text-muted' }, `${room.invigilators.length}/${room.required}`),
+      room.courses && room.courses.length
+        ? el('div', { class: 'text-muted', style: 'font-size: .75rem', title: room.courses.map((c) => `${c.code} ${c.name}`).join('\n') }, room.courses.map((c) => c.code).join(', '))
+        : '',
     ]),
     el('div', {}, [...room.invigilators.map((a) => dutyChip(s, a)), room.shortfall ? addButton(s, 'INVIGILATOR', room) : '']),
   ]));

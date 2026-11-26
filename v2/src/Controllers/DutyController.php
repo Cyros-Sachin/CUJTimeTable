@@ -169,7 +169,11 @@ class DutyController
             if (!is_numeric($students) || (int) $students != $students || $students < 1 || $students > DutyService::ROOM_STUDENTS_MAX) {
                 $errors["rooms.{$i}.students"] = 'Students must be a whole number from 1 to ' . DutyService::ROOM_STUDENTS_MAX;
             }
-            $clean[] = [$name, (int) $students];
+            $codes = trim((string) ($r['courses'] ?? ''));
+            if (mb_strlen($codes) > 1000) {
+                $errors["rooms.{$i}.courses"] = 'Too many course codes';
+            }
+            $clean[] = [$name, (int) $students, $codes];
         }
         if ($errors) {
             throw new HttpException(422, 'VALIDATION', 'Check the highlighted rooms', $errors);

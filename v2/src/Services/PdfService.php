@@ -43,14 +43,15 @@ class PdfService
         return 'data:' . $mime . ';base64,' . base64_encode((string) file_get_contents($fullPath));
     }
 
-    private static function newMpdf(string $format): Mpdf
+    /** @param array<string,int> $margins optional overrides, e.g. ['margin_left' => 8] */
+    private static function newMpdf(string $format, array $margins = []): Mpdf
     {
         $defaults = (new ConfigVariables())->getDefaults();
         $fontDirs = $defaults['fontDir'];
         $fontDefaults = (new FontVariables())->getDefaults();
         $fontData = $fontDefaults['fontdata'];
 
-        return new Mpdf([
+        return new Mpdf($margins + [
             'mode' => 'utf-8',
             'format' => $format,
             'margin_left' => 18,
@@ -160,9 +161,9 @@ class PdfService
             'serial' => $extras['serial'] ?? null,
             'note' => $extras['note'] ?? null,
         ]);
-        $mpdf = self::newMpdf('A4-L');
+        $mpdf = self::newMpdf('A4-L', ['margin_left' => 8, 'margin_right' => 8, 'margin_top' => 8, 'margin_bottom' => 10, 'margin_footer' => 4]);
         self::draftWatermark($mpdf, $overview['roster']);
-        $mpdf->SetHTMLFooter('<div style="text-align:center;font-size:9px;">Page {PAGENO} of {nbpg}</div>');
+        $mpdf->SetHTMLFooter('<div style="text-align:center;font-size:7.5pt;">Invigilation Duty Chart &middot; ' . e($overview['cycle']['title'] . ' - ' . $overview['cycle']['month_year']) . ' &middot; Page {PAGENO} of {nbpg}</div>');
         $mpdf->WriteHTML($html);
         return $mpdf->Output('', 'S');
     }
