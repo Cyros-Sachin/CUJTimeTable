@@ -12,9 +12,10 @@ db/            MySQL schema + seed data (db/schema.sql) — identical schema to 
 public/        Apache DocumentRoot: index.php front controller + CSS/JS assets
 src/
   Core/        Router, Request, Response, Db (PDO), Session, Auth, Csrf, Validator, View
-  Controllers/ One per resource area (Auth, Meta, Dashboard, Entry, Upload, DateSheet, Consolidated, Admin, Page)
+  Controllers/ One per resource area (Auth, Meta, Dashboard, Entry, Upload, DateSheet, Consolidated, Admin, Staff, Duty, Page)
   Services/    Business logic — EntryService, ClashService, RefNumberService, PdfService (mPDF),
-               ExcelService (PhpSpreadsheet), UploadService, AuditService
+               ExcelService (PhpSpreadsheet), UploadService, AuditService, DutyService (invigilation
+               rotation), DutyExportService
 views/         PHP templates: shared layout + one template per screen, plus views/pdf/* for mPDF
 resources/fonts/  Noto Sans Devanagari, copied in at image build time
 storage/       Runtime-writable: tmp, pdf, uploads, sessions, branding (Docker volume)
@@ -79,6 +80,35 @@ Set the `SMTP_*` / `MAIL_FROM` / `APP_URL` variables in `.env` to enable sending
 empty the reset still works but no email goes out. To try it locally:
 `docker compose --profile tools up -d mailpit`, set `SMTP_HOST=mailpit`, `SMTP_PORT=1025`,
 `SMTP_SECURE=none`, and open the inbox at http://localhost:8026.
+
+## Invigilation duties
+
+Exam Cell only. **Admin > Duty Staff** holds the people duties rotate over (employee code, name,
+optional department / designation / email / phone; add one by one or import the Excel template).
+**Invigilation Duties** (sidebar) builds one roster per exam cycle from that cycle's date sheet:
+
+- **Slots** are every date + time slot that has at least one exam. Invigilators needed per slot =
+  `max(minimum per slot, ceil(students in the slot / students per invigilator))`; change a slot's
+  number in the table to override it. Reserves per slot come from the settings.
+- **Rotation** is a least-recently-assigned cyclic queue: slots are filled in date/time order from the
+  front of the queue and the people picked go to the back. Anyone skipped (marked unavailable, daily
+  limit reached, or their own department has a paper in that slot when that option is on) keeps their
+  place at the front, so they get the next duty they can take. Duty counts therefore stay within one
+  of each other unless constraints prevent it. The starting order puts staff with the fewest duties in
+  earlier *published* rosters first, so the rotation continues across exam cycles.
+- **Manual edits**: add, replace, swap or remove from a duty's menu. A soft conflict (unavailable,
+  over the daily limit, own-department paper) asks for confirmation; being on duty twice in one slot
+  is refused. Manual duties are kept when the rotation is regenerated.
+- **Publish** locks the roster (no regenerate or edits until unpublished) and removes the DRAFT
+  watermark from the PDFs.
+- **Exports**: Excel (duty chart, one row per duty, per-staff summary), the duty chart PDF and duty
+  letters PDF (one page per person, or one person from the load table). The PDF serial/note dialog works
+  as for date sheets.
+
+The "own department" option is strict: if most departments have papers in most sessions, the eligible
+pool per slot gets small and the page reports unfilled duties.
+
+Tables come from `db/migrations/005_invigilation_duties.sql` (applied automatically on start).
 
 ## Common operations
 

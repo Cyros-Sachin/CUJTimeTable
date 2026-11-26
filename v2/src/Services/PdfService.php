@@ -129,6 +129,65 @@ class PdfService
         ]);
     }
 
+    /** Shared letterhead/signature data for the duty PDFs. */
+    private static function brandingParams(): array
+    {
+        $settings = self::settings();
+        return [
+            'logoDataUri' => self::fileToDataUri($settings['logoPath']),
+            'signatureDataUri' => self::fileToDataUri($settings['signaturePath']),
+            'controllerName' => $settings['controllerName'],
+            'controllerTitle' => $settings['controllerTitle'],
+        ];
+    }
+
+    /** A DRAFT roster is watermarked so an unpublished chart is never mistaken for the final one. */
+    private static function draftWatermark(Mpdf $mpdf, array $roster): void
+    {
+        if ($roster['status'] !== 'PUBLISHED') {
+            $mpdf->SetWatermarkText('DRAFT', 0.08);
+            $mpdf->showWatermarkText = true;
+        }
+    }
+
+    /** Date x slot invigilation duty chart (landscape). */
+    public static function renderDutyChartPdf(array $overview, array $extras = []): string
+    {
+        $html = View::renderPartial('pdf/duty-chart', self::brandingParams() + [
+            'cycle' => $overview['cycle'],
+            'slots' => $overview['slots'],
+            'issuedOn' => date('Y-m-d'),
+            'serial' => $extras['serial'] ?? null,
+            'note' => $extras['note'] ?? null,
+        ]);
+        $mpdf = self::newMpdf('A4-L');
+        self::draftWatermark($mpdf, $overview['roster']);
+        $mpdf->SetHTMLFooter('<div style="text-align:center;font-size:9px;">Page {PAGENO} of {nbpg}</div>');
+        $mpdf->WriteHTML($html);
+        return $mpdf->Output('', 'S');
+    }
+
+    /** One duty letter per staff member, each starting on a new page. */
+    public static function renderDutyLettersPdf(array $overview, array $staff, array $extras = []): string
+    {
+        $branding = self::brandingParams();
+        $mpdf = self::newMpdf('A4');
+        self::draftWatermark($mpdf, $overview['roster']);
+        foreach (array_values($staff) as $i => $person) {
+            if ($i > 0) {
+                $mpdf->AddPage();
+            }
+            $mpdf->WriteHTML(View::renderPartial('pdf/duty-letter', $branding + [
+                'cycle' => $overview['cycle'],
+                'person' => $person,
+                'issuedOn' => date('Y-m-d'),
+                'serial' => $extras['serial'] ?? null,
+                'note' => $extras['note'] ?? null,
+            ]));
+        }
+        return $mpdf->Output('', 'S');
+    }
+
     public static function renderOverallPdf(array $params): string
     {
         $html = View::renderPartial('pdf/overall', [

@@ -11,6 +11,7 @@ $pageScripts = [
     'datesheets' => 'datesheet.js',
     'program-datesheet' => 'program-datesheet.js',
     'consolidated' => 'consolidated.js',
+    'duties' => 'duties.js',
     'admin' => 'admin.js',
     'dashboard' => 'dashboard.js',
 ];

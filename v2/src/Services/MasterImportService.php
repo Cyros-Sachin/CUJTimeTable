@@ -12,7 +12,7 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-/** Excel/CSV bulk insert for departments, programs and department coordinators (Exam Cell admin). */
+/** Excel/CSV bulk insert for departments, programs, department coordinators and duty staff (Exam Cell admin). */
 class MasterImportService
 {
     private const MAX_ROWS = 1000;
@@ -20,6 +20,7 @@ class MasterImportService
     private const DEPT_HEADERS = ['Code', 'Name'];
     private const PROGRAM_HEADERS = ['Department', 'Code', 'Name', 'Total Semesters'];
     private const COORDINATOR_HEADERS = ['Name', 'Email', 'Department'];
+    private const STAFF_HEADERS = ['Employee Code', 'Name', 'Department', 'Designation', 'Email', 'Phone'];
 
     private static function styleHeader(Worksheet $sheet, array $headers): void
     {
@@ -143,6 +144,49 @@ class MasterImportService
             'Department: pick from the dropdown (the department code is also accepted).',
             'A temporary password is generated for each coordinator; they must change it on first login.',
             'Coordinators whose email already exists are skipped.',
+        ]);
+        $wb->setActiveSheetIndex(0);
+        return $wb;
+    }
+
+    public static function staffTemplate(): Spreadsheet
+    {
+        $wb = new Spreadsheet();
+        $sheet = $wb->getActiveSheet();
+        $sheet->setTitle('Staff');
+        $lists = $wb->createSheet();
+        $lists->setTitle('Lists');
+        $lists->setSheetState(Worksheet::SHEETSTATE_HIDDEN);
+
+        $depts = Db::conn()->query('SELECT name FROM departments WHERE is_active = 1 ORDER BY name')->fetchAll();
+        foreach ($depts as $i => $d) {
+            $lists->setCellValue('A' . ($i + 1), $d['name']);
+        }
+        $deptCount = max(count($depts), 1);
+
+        self::styleHeader($sheet, self::STAFF_HEADERS);
+        foreach (['A' => 18, 'B' => 32, 'C' => 60, 'D' => 26, 'E' => 34, 'F' => 16] as $col => $w) {
+            $sheet->getColumnDimension($col)->setWidth($w);
+        }
+        $sheet->getStyle('A2:A1001')->getNumberFormat()->setFormatCode('@');
+        $sheet->getStyle('F2:F1001')->getNumberFormat()->setFormatCode('@');
+        for ($r = 2; $r <= 1001; $r++) {
+            $dv = $sheet->getCell("C{$r}")->getDataValidation();
+            $dv->setType(DataValidation::TYPE_LIST);
+            $dv->setAllowBlank(true);
+            $dv->setShowDropDown(true); // PhpSpreadsheet inverts this: true = arrow visible
+            $dv->setShowErrorMessage(true);
+            $dv->setError('Pick a department from the dropdown list, or leave it blank.');
+            $dv->setFormula1("Lists!\$A\$1:\$A\${$deptCount}");
+        }
+        self::addNotes($wb, [
+            'One staff member per row, starting on row 2. Invigilation duties rotate over these people.',
+            'Employee Code: unique, up to 30 characters (required).',
+            'Name: up to 120 characters (required).',
+            'Department: pick from the dropdown (the department code is also accepted). Leave blank for staff outside any department.',
+            'Designation: optional, e.g. Assistant Professor (up to 100 characters).',
+            'Email / Phone: optional contact details printed on duty letters.',
+            'Staff whose employee code already exists are skipped.',
         ]);
         $wb->setActiveSheetIndex(0);
         return $wb;
@@ -435,5 +479,90 @@ class MasterImportService
             }
         });
         return ['valid' => count($toInsert), 'skipped' => $skipped, 'inserted' => count($created), 'created' => $created];
+    }
+
+    /** @return array{valid:int,skipped:int,inserted:int} */
+    public static function importStaff(array $file, bool $dryRun): array
+    {
+        $raw = self::readRows($file, self::STAFF_HEADERS);
+        $pdo = Db::conn();
+        $deptLookup = [];
+        foreach ($pdo->query('SELECT id, code, name FROM departments WHERE is_active = 1')->fetchAll() as $d) {
+            $deptLookup[mb_strtolower($d['code'])] = $d;
+            $deptLookup[mb_strtolower($d['name'])] = $d;
+        }
+        $codes = [];
+        foreach ($pdo->query('SELECT employee_code FROM staff')->fetchAll() as $s) {
+            $codes[mb_strtolower($s['employee_code'])] = true;
+        }
+
+        $errors = [];
+        $toInsert = [];
+        $skipped = 0;
+        $seen = [];
+        foreach ($raw as $item) {
+            $row = $item['row'];
+            [$code, $name, $deptText, $designation, $email, $phone] = $item['cells'];
+            $dept = $deptText === '' ? null : ($deptLookup[mb_strtolower($deptText)] ?? false);
+            $bad = false;
+            if ($code === '' || mb_strlen($code) > 30) {
+                $errors[] = ['row' => $row, 'field' => 'employee_code', 'message' => 'Employee Code is required (max 30 characters)'];
+                $bad = true;
+            }
+            if ($name === '' || mb_strlen($name) > 120) {
+                $errors[] = ['row' => $row, 'field' => 'name', 'message' => 'Name is required (max 120 characters)'];
+                $bad = true;
+            }
+            if ($dept === false) {
+                $errors[] = ['row' => $row, 'field' => 'department', 'message' => "Unknown department \"{$deptText}\""];
+                $bad = true;
+            }
+            if (mb_strlen($designation) > 100) {
+                $errors[] = ['row' => $row, 'field' => 'designation', 'message' => 'Designation is at most 100 characters'];
+                $bad = true;
+            }
+            if ($email !== '' && (!filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen($email) > 160)) {
+                $errors[] = ['row' => $row, 'field' => 'email', 'message' => 'Email must be a valid address (max 160 characters)'];
+                $bad = true;
+            }
+            if (mb_strlen($phone) > 20) {
+                $errors[] = ['row' => $row, 'field' => 'phone', 'message' => 'Phone is at most 20 characters'];
+                $bad = true;
+            }
+            if ($bad) {
+                continue;
+            }
+            $key = mb_strtolower($code);
+            if (isset($seen[$key])) {
+                $errors[] = ['row' => $row, 'field' => 'employee_code', 'message' => 'Duplicate employee code within this file'];
+                continue;
+            }
+            $seen[$key] = true;
+            if (isset($codes[$key])) {
+                $skipped++;
+                continue;
+            }
+            $toInsert[] = [
+                'employee_code' => $code, 'name' => $name, 'department_id' => $dept ? (int) $dept['id'] : null,
+                'designation' => $designation !== '' ? $designation : null,
+                'email' => $email !== '' ? mb_strtolower($email) : null, 'phone' => $phone !== '' ? $phone : null,
+            ];
+        }
+        if ($errors) {
+            throw new HttpException(422, 'UPLOAD_INVALID', count($errors) . ' row(s) failed validation', ['rows' => $errors]);
+        }
+        if ($dryRun) {
+            return ['valid' => count($toInsert), 'skipped' => $skipped, 'inserted' => 0];
+        }
+        Db::transaction(function ($pdo) use ($toInsert) {
+            $stmt = $pdo->prepare(
+                'INSERT INTO staff (employee_code, name, department_id, designation, email, phone)
+                 VALUES (:employee_code, :name, :department_id, :designation, :email, :phone)'
+            );
+            foreach ($toInsert as $s) {
+                $stmt->execute($s);
+            }
+        });
+        return ['valid' => count($toInsert), 'skipped' => $skipped, 'inserted' => count($toInsert)];
     }
 }

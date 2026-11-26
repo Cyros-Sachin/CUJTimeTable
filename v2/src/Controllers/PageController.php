@@ -83,6 +83,15 @@ class PageController
         Response::html(View::render('consolidated', ['pageTitle' => 'Consolidated', 'activeNav' => 'consolidated', 'user' => $user]));
     }
 
+    public function duties(Request $request): void
+    {
+        $user = self::requirePageLogin();
+        if ($user['role'] !== 'EXAM_CELL') {
+            Response::forbiddenPage();
+        }
+        Response::html(View::render('duties', ['pageTitle' => 'Invigilation Duties', 'activeNav' => 'duties', 'user' => $user]));
+    }
+
     public function admin(Request $request, array $params): void
     {
         $user = self::requirePageLogin();

@@ -7,10 +7,12 @@ use App\Controllers\AuthController;
 use App\Controllers\ConsolidatedController;
 use App\Controllers\DashboardController;
 use App\Controllers\DateSheetController;
+use App\Controllers\DutyController;
 use App\Controllers\EntryController;
 use App\Controllers\MetaController;
 use App\Controllers\PageController;
 use App\Controllers\ProgramSheetController;
+use App\Controllers\StaffController;
 use App\Controllers\UploadController;
 use App\Core\Db;
 use App\Core\Response;
@@ -119,6 +121,32 @@ $router->delete('/api/admin/branding/signature', [AdminController::class, 'delet
 
 $router->get('/api/admin/audit-logs', [AdminController::class, 'auditLogs']);
 
+// ---- Admin: duty staff pool (EXAM_CELL) ------------------------------------
+$router->get('/api/admin/staff', [StaffController::class, 'index']);
+$router->get('/api/admin/staff/template', [StaffController::class, 'template']);
+$router->post('/api/admin/staff/import', [StaffController::class, 'import']);
+$router->post('/api/admin/staff', [StaffController::class, 'create']);
+$router->put('/api/admin/staff/{id}', [StaffController::class, 'update']);
+$router->delete('/api/admin/staff/{id}', [StaffController::class, 'destroy']);
+
+// ---- Invigilation duties (EXAM_CELL; static paths before the {id} wildcards) ----
+$router->get('/api/duties', [DutyController::class, 'index']);
+$router->put('/api/duties/settings', [DutyController::class, 'updateSettings']);
+$router->post('/api/duties/generate', [DutyController::class, 'generate']);
+$router->patch('/api/duties/status', [DutyController::class, 'setStatus']);
+$router->put('/api/duties/slots', [DutyController::class, 'setSlotOverride']);
+$router->get('/api/duties/candidates', [DutyController::class, 'candidates']);
+$router->get('/api/duties/excel', [DutyController::class, 'excel']);
+$router->get('/api/duties/chart-pdf', [DutyController::class, 'chartPdf']);
+$router->get('/api/duties/letters-pdf', [DutyController::class, 'lettersPdf']);
+$router->post('/api/duties/assignments/swap', [DutyController::class, 'swapAssignments']);
+$router->post('/api/duties/assignments', [DutyController::class, 'addAssignment']);
+$router->put('/api/duties/assignments/{id}', [DutyController::class, 'replaceAssignment']);
+$router->delete('/api/duties/assignments/{id}', [DutyController::class, 'removeAssignment']);
+$router->get('/api/duties/unavailability', [DutyController::class, 'listUnavailability']);
+$router->post('/api/duties/unavailability', [DutyController::class, 'addUnavailability']);
+$router->delete('/api/duties/unavailability/{id}', [DutyController::class, 'deleteUnavailability']);
+
 // ---- Pages (server-rendered) --------------------------------------------
 $router->get('/', [PageController::class, 'home']);
 $router->get('/login', [PageController::class, 'login']);
@@ -129,6 +157,7 @@ $router->get('/entries/{id}/edit', [PageController::class, 'entryForm']);
 $router->get('/datesheets/program', [PageController::class, 'programDatesheet']);
 $router->get('/datesheets', [PageController::class, 'datesheets']);
 $router->get('/consolidated', [PageController::class, 'consolidated']);
+$router->get('/duties', [PageController::class, 'duties']);
 $router->get('/admin', [PageController::class, 'admin']);
 $router->get('/admin/{tab}', [PageController::class, 'admin']);
 $router->get('/logout', [PageController::class, 'logout']);

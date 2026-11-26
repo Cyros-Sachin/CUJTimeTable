@@ -6,6 +6,7 @@ $tabs = [
     'time-slots' => 'Time Slots',
     'sessions-cycles' => 'Sessions & Cycles',
     'users' => 'Users',
+    'staff' => 'Duty Staff',
     'branding' => 'Letterhead & Signature',
     'audit-log' => 'Audit Log',
 ];

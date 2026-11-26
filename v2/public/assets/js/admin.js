@@ -765,7 +765,113 @@ async function renderAuditLog(page = 1) {
   }
 }
 
+// ---- Duty staff (invigilation pool) ------------------------------------------------------
+async function renderStaff() {
+  root.innerHTML = '<div class="skeleton" style="height:300px"></div>';
+  const [staffRes, metaRes] = await Promise.all([apiGet('/admin/staff'), apiGet('/meta')]);
+  const departments = metaRes.data.departments;
+  let items = staffRes.data;
+  let query = '';
+
+  const addBtn = el('button', { type: 'button', class: 'btn btn-primary' }, [el('i', { class: 'bi bi-plus-lg me-1' }), 'Add staff']);
+  addBtn.addEventListener('click', () => openCreateEdit());
+  const search = el('input', { type: 'search', class: 'form-control', placeholder: 'Search name, code, department…', style: 'max-width: 320px;' });
+  search.addEventListener('input', () => { query = search.value.trim().toLowerCase(); renderTable(); });
+
+  root.innerHTML = '';
+  root.appendChild(el('div', { class: 'd-flex flex-column gap-3' }, [
+    el('p', { class: 'text-muted small mb-0' }, [
+      'Invigilation duties rotate over the active staff listed here. Assign them on the ',
+      el('a', { href: '/duties' }, 'Invigilation Duties'), ' page.',
+    ]),
+    importCard({ resource: 'staff', label: 'staff', onImported: refresh }),
+    el('div', { class: 'd-flex flex-wrap justify-content-between gap-2' }, [search, addBtn]),
+    el('div', { class: 'card-surface p-0', id: 'staffWrap' }),
+  ]));
+  renderTable();
+
+  async function refresh() {
+    items = (await apiGet('/admin/staff')).data;
+    renderTable();
+  }
+
+  function renderTable() {
+    const wrap = document.getElementById('staffWrap');
+    wrap.innerHTML = '';
+    const list = items.filter((s) => !query || `${s.employee_code} ${s.name} ${s.department_name || ''} ${s.designation || ''}`.toLowerCase().includes(query));
+    if (!list.length) {
+      wrap.appendChild(el('p', { class: 'text-muted mb-0 p-3' }, items.length ? 'No staff match this search.' : 'No staff yet. Add them one by one or import the Excel template.'));
+      return;
+    }
+    const bodyRows = list.map((s) => el('tr', { class: Number(s.is_active) ? '' : 'text-muted' }, [
+      el('td', {}, s.employee_code), el('td', {}, s.name), el('td', {}, s.department_name || '—'), el('td', {}, s.designation || '—'),
+      el('td', { class: 'small' }, [s.email || '', s.email && s.phone ? el('br') : '', s.phone || '']),
+      el('td', {}, String(s.duty_count)),
+      el('td', {}, Number(s.is_active) ? el('span', { class: 'chip chip-open' }, 'Active') : el('span', { class: 'chip chip-neutral' }, 'Inactive')),
+      el('td', { class: 'text-end text-nowrap' }, [
+        el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary me-1', onclick: () => toggleActive(s) }, Number(s.is_active) ? 'Deactivate' : 'Activate'),
+        el('button', { type: 'button', class: 'btn btn-sm btn-link', title: 'Edit', onclick: () => openCreateEdit(s) }, el('i', { class: 'bi bi-pencil' })),
+        el('button', { type: 'button', class: 'btn btn-sm btn-link text-danger', title: 'Remove', onclick: () => doDelete(s) }, el('i', { class: 'bi bi-trash' })),
+      ]),
+    ]));
+    wrap.appendChild(el('div', { class: 'table-scroll' }, table(['Code', 'Name', 'Department', 'Designation', 'Contact', 'Duties', 'Status', ''], bodyRows)));
+  }
+
+  async function openCreateEdit(item) {
+    const values = await openFormModal({
+      title: item ? 'Edit staff member' : 'Add staff member',
+      fields: [
+        { name: 'employee_code', label: 'Employee code', type: 'text' },
+        { name: 'name', label: 'Name', type: 'text' },
+        { name: 'department_id', label: 'Department', type: 'select', options: departments.map((d) => ({ value: d.id, label: d.name })), hint: 'Leave unselected for staff outside any department.' },
+        { name: 'designation', label: 'Designation', type: 'text' },
+        { name: 'email', label: 'Email', type: 'email' },
+        { name: 'phone', label: 'Phone', type: 'text' },
+      ],
+      initialValues: item || {},
+    });
+    if (!values) return;
+    values.department_id = values.department_id ? Number(values.department_id) : '';
+    try {
+      if (item) await apiSend('PUT', `/admin/staff/${item.id}`, values);
+      else await apiSend('POST', '/admin/staff', values);
+      toast(`Staff member ${item ? 'updated' : 'added'}`);
+      closeFormModal();
+      await refresh();
+    } catch (err) {
+      if (err instanceof ApiError) { if (err.fields) formModalErrors(err); toast(err.message, 'error'); }
+    }
+  }
+
+  async function toggleActive(s) {
+    try {
+      await apiSend('PUT', `/admin/staff/${s.id}`, { is_active: !Number(s.is_active) });
+      toast(Number(s.is_active) ? 'Staff member deactivated' : 'Staff member activated');
+      await refresh();
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not update', 'error');
+    }
+  }
+
+  async function doDelete(s) {
+    const ok = await confirmDialog({
+      title: 'Remove staff member',
+      message: `"${s.name}" will be deactivated if they have duties on record, or deleted otherwise.`,
+      confirmLabel: 'Remove', danger: true,
+    });
+    if (!ok) return;
+    try {
+      const res = await apiSend('DELETE', `/admin/staff/${s.id}`);
+      toast(res.data.deactivated ? 'Staff member deactivated (has duty history)' : 'Staff member removed');
+      await refresh();
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not delete', 'error');
+    }
+  }
+}
+
 const renderers = {
+  staff: renderStaff,
   departments: renderDepartments,
   programs: renderPrograms,
   'time-slots': renderTimeSlots,
