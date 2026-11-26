@@ -82,7 +82,7 @@ $examName = $cycle['title'] . ' - ' . $cycle['month_year'];
 
   <table class="duties">
     <thead>
-      <tr><th style="width:8%">S.No</th><th style="width:22%">Date</th><th style="width:18%">Day</th><th style="width:28%">Time</th><th style="width:24%">Duty</th></tr>
+      <tr><th style="width:7%">S.No</th><th style="width:17%">Date</th><th style="width:16%">Day</th><th style="width:22%">Time</th><th style="width:18%">Room / Class</th><th style="width:20%">Duty</th></tr>
     </thead>
     <tbody>
       <?php foreach ($person['duties'] as $i => $d): ?>
@@ -91,6 +91,7 @@ $examName = $cycle['title'] . ' - ' . $cycle['month_year'];
         <td><?= e(ddmmyyyy($d['exam_date'])) ?></td>
         <td><?= e($d['weekday']) ?></td>
         <td><?= e($d['time_slot_label']) ?></td>
+        <td><?= $d['room'] ? pdf_text($d['room']) : '&ndash;' ?></td>
         <td><?= $d['role'] === 'RESERVE' ? 'Reserve Invigilator' : 'Invigilator' ?></td>
       </tr>
       <?php endforeach; ?>

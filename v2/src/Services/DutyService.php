@@ -11,20 +11,26 @@ use PDO;
 /**
  * Invigilation duty roster per exam cycle.
  *
- * Slots: every (exam_date, time_slot) that has at least one exam_entries row in the cycle. The
- * invigilators a slot needs are computed live from its student total (see required()), unless the
- * Exam Cell stored an override. Reserves per slot come from the roster settings.
+ * Slots: every (exam_date, time_slot) that has at least one exam_entries row in the cycle.
+ *
+ * Teachers needed per slot:
+ *  - Slot WITH a seating allotment (duty_rooms): every room / class gets per_room_small teachers,
+ *    or per_room_large when it seats more than room_threshold students (defaults: 1, 2 above 35).
+ *    The slot needs the sum over its rooms, and each invigilator is posted to a room.
+ *  - Slot WITHOUT seating yet: max(min_per_slot, ceil(students / students_per_invigilator)), unless
+ *    the Exam Cell stored an override. These duties have no room until seating is added.
+ * Reserves per slot come from the roster settings and are never tied to a room.
  *
  * Rotation (generate()): a least-recently-assigned cyclic queue. Slots are processed in date/time
- * order; each takes the first eligible staff from the front of the queue and moves them to the back.
- * Staff skipped because they were ineligible (on leave, over the daily limit, own-department paper
- * in the slot) keep their place at the front, so they are first in line for the next slot they can
- * take. That keeps duty counts even (nobody gets a second duty before everyone eligible has had one)
- * and makes the order cyclic. The starting order puts staff with the fewest duties in earlier
- * PUBLISHED rosters first, so the rotation carries on across exam cycles instead of restarting.
+ * order (rooms in seating order within a slot); each takes the first eligible staff from the front
+ * of the queue and moves them to the back. Staff skipped because they were ineligible (on leave,
+ * over the daily limit, own-department paper in the slot) keep their place at the front, so they
+ * are first in line for the next slot they can take. That keeps duty counts even and the order
+ * cyclic. The starting order puts staff with the fewest duties in earlier PUBLISHED rosters first,
+ * so the rotation carries on across exam cycles instead of restarting.
  *
  * Manual assignments (added / replaced / swapped by hand) are kept when the roster is regenerated
- * and count towards their slot's requirement. A PUBLISHED roster is read-only until unpublished.
+ * and count towards their slot's (and room's) requirement. A PUBLISHED roster is read-only.
  */
 class DutyService
 {
@@ -35,8 +41,14 @@ class DutyService
         'min_per_slot' => ['int', 'min:0', 'max:500'],
         'reserve_per_slot' => ['int', 'min:0', 'max:100'],
         'max_per_day' => ['int', 'min:1', 'max:10'],
+        'room_threshold' => ['int', 'min:1', 'max:1000'],
+        'per_room_small' => ['int', 'min:1', 'max:10'],
+        'per_room_large' => ['int', 'min:1', 'max:10'],
         'exclude_own_department' => ['bool'],
     ];
+
+    public const ROOM_NAME_MAX = 60;
+    public const ROOM_STUDENTS_MAX = 1000;
 
     // ---- Loading ------------------------------------------------------------------------
 
@@ -76,7 +88,8 @@ class DutyService
 
     private static function castRoster(array $r): array
     {
-        foreach (['id', 'exam_cycle_id', 'students_per_invigilator', 'min_per_slot', 'reserve_per_slot', 'max_per_day', 'exclude_own_department'] as $k) {
+        foreach (['id', 'exam_cycle_id', 'students_per_invigilator', 'min_per_slot', 'reserve_per_slot', 'max_per_day',
+            'room_threshold', 'per_room_small', 'per_room_large', 'exclude_own_department'] as $k) {
             $r[$k] = (int) $r[$k];
         }
         return $r;
@@ -119,10 +132,16 @@ class DutyService
         return $out;
     }
 
-    /** Invigilators needed for a slot with $students candidates: max(minimum, ceil(students / ratio)). */
+    /** Invigilators for a slot without seating: max(minimum, ceil(students / ratio)). */
     public static function required(array $roster, int $students): int
     {
         return max($roster['min_per_slot'], (int) ceil($students / max(1, $roster['students_per_invigilator'])));
+    }
+
+    /** Teachers for one room / class of the seating allotment. */
+    public static function roomTeachers(array $roster, int $students): int
+    {
+        return $students > $roster['room_threshold'] ? $roster['per_room_large'] : $roster['per_room_small'];
     }
 
     /** @return array<string,int> */
@@ -137,23 +156,38 @@ class DutyService
         return $out;
     }
 
+    /** @return array<string,array<int,array{id:int,room:string,students:int}>> seating per "date|slotId", in seating order */
+    private static function rooms(PDO $pdo, int $rosterId): array
+    {
+        $stmt = $pdo->prepare('SELECT id, exam_date, time_slot_id, room, students FROM duty_rooms WHERE roster_id = :r ORDER BY exam_date, time_slot_id, sort_order, id');
+        $stmt->execute(['r' => $rosterId]);
+        $out = [];
+        foreach ($stmt->fetchAll() as $r) {
+            $out[self::key($r['exam_date'], (int) $r['time_slot_id'])][] = ['id' => (int) $r['id'], 'room' => $r['room'], 'students' => (int) $r['students']];
+        }
+        return $out;
+    }
+
     private static function assignments(PDO $pdo, int $rosterId): array
     {
         $stmt = $pdo->prepare(
-            'SELECT a.id, a.exam_date, a.time_slot_id, a.staff_id, a.role, a.is_manual,
+            'SELECT a.id, a.exam_date, a.time_slot_id, a.room_id, a.staff_id, a.role, a.is_manual,
+                    r.room AS room_name,
                     s.employee_code, s.name, s.designation, s.email, s.phone, s.department_id, s.is_active,
                     d.name AS department_name, d.code AS department_code
              FROM duty_assignments a
              JOIN staff s ON s.id = a.staff_id
+             LEFT JOIN duty_rooms r ON r.id = a.room_id
              LEFT JOIN departments d ON d.id = s.department_id
-             WHERE a.roster_id = :r
+             WHERE a.roster_id = :roster
              ORDER BY a.exam_date, a.time_slot_id, a.role, s.name'
         );
-        $stmt->execute(['r' => $rosterId]);
+        $stmt->execute(['roster' => $rosterId]);
         return array_map(static function (array $a): array {
             foreach (['id', 'time_slot_id', 'staff_id', 'is_manual', 'is_active'] as $k) {
                 $a[$k] = (int) $a[$k];
             }
+            $a['room_id'] = $a['room_id'] !== null ? (int) $a['room_id'] : null;
             $a['department_id'] = $a['department_id'] !== null ? (int) $a['department_id'] : null;
             return $a;
         }, $stmt->fetchAll());
@@ -194,6 +228,7 @@ class DutyService
         $roster = self::roster($cycleId, $pdo);
         $slots = self::examSlots($cycleId, $pdo);
         $overrides = self::overrides($pdo, $roster['id']);
+        $roomsByKey = self::rooms($pdo, $roster['id']);
         $assignments = self::assignments($pdo, $roster['id']);
 
         $byKey = [];
@@ -208,26 +243,55 @@ class DutyService
         }
 
         $outSlots = [];
-        $totals = ['slots' => 0, 'required' => 0, 'reserve_required' => 0, 'assigned' => 0, 'shortfall' => 0, 'reserve_shortfall' => 0];
+        $totals = ['slots' => 0, 'slots_with_seating' => 0, 'rooms' => 0, 'required' => 0, 'reserve_required' => 0,
+            'assigned' => 0, 'shortfall' => 0, 'reserve_shortfall' => 0];
         foreach ($slots as $k => $s) {
-            $computed = self::required($roster, $s['total_students']);
-            $override = $overrides[$k] ?? null;
-            $required = $override ?? $computed;
             $inv = array_values(array_filter($byKey[$k] ?? [], fn ($a) => $a['role'] === 'INVIGILATOR'));
             $res = array_values(array_filter($byKey[$k] ?? [], fn ($a) => $a['role'] === 'RESERVE'));
+            $slotRooms = $roomsByKey[$k] ?? [];
+            $computed = self::required($roster, $s['total_students']);
+            $override = $overrides[$k] ?? null;
+
+            $rooms = [];
+            $unroomed = $inv;
+            $roomShort = 0;
+            if ($slotRooms) {
+                $unroomed = array_values(array_filter($inv, fn ($a) => $a['room_id'] === null));
+                foreach ($slotRooms as $r) {
+                    $need = self::roomTeachers($roster, $r['students']);
+                    $people = array_values(array_filter($inv, fn ($a) => $a['room_id'] === $r['id']));
+                    $short = max(0, $need - count($people));
+                    $roomShort += $short;
+                    $rooms[] = $r + ['required' => $need, 'invigilators' => $people, 'shortfall' => $short];
+                }
+                $required = array_sum(array_column($rooms, 'required'));
+                // Invigilators without a room still cover the slot; they just need posting to a room.
+                $shortfall = max(0, $roomShort - count($unroomed));
+            } else {
+                $required = $override ?? $computed;
+                $shortfall = max(0, $required - count($inv));
+            }
+
+            $seated = array_sum(array_column($slotRooms, 'students'));
             $slot = $s + [
                 'weekday' => weekday_of($s['exam_date']),
+                'has_seating' => (bool) $slotRooms,
+                'seated_students' => $seated,
+                'rooms' => $rooms,
                 'computed_required' => $computed,
-                'override_required' => $override,
+                'override_required' => $slotRooms ? null : $override,
                 'required' => $required,
                 'reserve_required' => $roster['reserve_per_slot'],
                 'invigilators' => $inv,
+                'unroomed' => $slotRooms ? $unroomed : [],
                 'reserves' => $res,
-                'shortfall' => max(0, $required - count($inv)),
+                'shortfall' => $shortfall,
                 'reserve_shortfall' => max(0, $roster['reserve_per_slot'] - count($res)),
             ];
             $outSlots[] = $slot;
             $totals['slots']++;
+            $totals['slots_with_seating'] += $slotRooms ? 1 : 0;
+            $totals['rooms'] += count($slotRooms);
             $totals['required'] += $required;
             $totals['reserve_required'] += $roster['reserve_per_slot'];
             $totals['assigned'] += count($inv) + count($res);
@@ -262,7 +326,7 @@ class DutyService
             $l['duties'][] = [
                 'assignment_id' => $a['id'], 'exam_date' => $a['exam_date'], 'weekday' => weekday_of($a['exam_date']),
                 'time_slot_id' => $a['time_slot_id'], 'time_slot_label' => $slots[$k]['time_slot_label'],
-                'start_time' => $slots[$k]['start_time'], 'role' => $a['role'],
+                'start_time' => $slots[$k]['start_time'], 'role' => $a['role'], 'room' => $a['room_name'],
             ];
             unset($l);
         }
@@ -322,7 +386,7 @@ class DutyService
         });
     }
 
-    /** Set (int) or clear (null) the invigilators-needed override for one slot. */
+    /** Set (int) or clear (null) the invigilators-needed override for one slot without seating. */
     public static function setSlotOverride(int $cycleId, string $date, int $slotId, ?int $required): void
     {
         Db::transaction(function (PDO $pdo) use ($cycleId, $date, $slotId, $required) {
@@ -351,6 +415,79 @@ class DutyService
         return $slot;
     }
 
+    // ---- Seating allotment ---------------------------------------------------------------
+
+    /**
+     * Replace the seating of several slots at once (one transaction).
+     * $seating: list of [exam_date, time_slot_id, rooms => [[room, students], ...]]. An empty room list
+     * clears that slot's seating. Rooms whose name is unchanged keep their id, so invigilators already
+     * posted there stay posted; removed rooms release their invigilators (room_id -> NULL).
+     *
+     * @return array{slots:int, rooms:int}
+     */
+    public static function replaceSeating(int $cycleId, array $seating): array
+    {
+        return Db::transaction(function (PDO $pdo) use ($cycleId, $seating) {
+            $roster = self::roster($cycleId, $pdo, true);
+            self::assertEditable($roster);
+            $slots = self::examSlots($cycleId, $pdo);
+            $existing = self::rooms($pdo, $roster['id']);
+
+            $ins = $pdo->prepare(
+                'INSERT INTO duty_rooms (roster_id, exam_date, time_slot_id, room, students, sort_order)
+                 VALUES (:r, :d, :s, :room, :students, :o)'
+            );
+            $upd = $pdo->prepare('UPDATE duty_rooms SET students = :students, sort_order = :o, room = :room WHERE id = :id');
+            $del = $pdo->prepare('DELETE FROM duty_rooms WHERE id = :id');
+            $roomCount = 0;
+            foreach ($seating as $entry) {
+                $k = self::key($entry['exam_date'], (int) $entry['time_slot_id']);
+                if (!isset($slots[$k])) {
+                    throw new HttpException(422, 'NO_EXAMS_IN_SLOT', 'No exams are scheduled on ' . ddmmyyyy($entry['exam_date']) . ' in that session');
+                }
+                $current = [];
+                foreach ($existing[$k] ?? [] as $r) {
+                    $current[mb_strtolower($r['room'])] = $r['id'];
+                }
+                $keep = [];
+                foreach (array_values($entry['rooms']) as $i => [$room, $students]) {
+                    $lk = mb_strtolower($room);
+                    if (isset($keep[$lk])) {
+                        throw new HttpException(422, 'VALIDATION', "Room \"{$room}\" is listed twice for " . ddmmyyyy($entry['exam_date']));
+                    }
+                    if (isset($current[$lk])) {
+                        $upd->execute(['students' => $students, 'o' => $i, 'room' => $room, 'id' => $current[$lk]]);
+                        $keep[$lk] = $current[$lk];
+                    } else {
+                        $ins->execute(['r' => $roster['id'], 'd' => $entry['exam_date'], 's' => (int) $entry['time_slot_id'], 'room' => $room, 'students' => $students, 'o' => $i]);
+                        $keep[$lk] = (int) $pdo->lastInsertId();
+                    }
+                    $roomCount++;
+                }
+                foreach ($current as $lk => $id) {
+                    if (!isset($keep[$lk])) {
+                        $del->execute(['id' => $id]);
+                    }
+                }
+            }
+            return ['slots' => count($seating), 'rooms' => $roomCount];
+        });
+    }
+
+    /** All seating of the cycle, for the template / round-trip export. */
+    public static function seatingRows(int $cycleId): array
+    {
+        $pdo = Db::conn();
+        $roster = self::roster($cycleId, $pdo);
+        $stmt = $pdo->prepare(
+            'SELECT r.exam_date, t.label AS time_slot_label, r.room, r.students
+             FROM duty_rooms r JOIN time_slots t ON t.id = r.time_slot_id
+             WHERE r.roster_id = :r ORDER BY r.exam_date, t.start_time, r.sort_order, r.id'
+        );
+        $stmt->execute(['r' => $roster['id']]);
+        return $stmt->fetchAll();
+    }
+
     // ---- Generation ---------------------------------------------------------------------
 
     /** @return array{slots:int, assigned:int, kept_manual:int, shortfall:int, short_slots:array} */
@@ -369,7 +506,7 @@ class DutyService
                 $staff[(int) $s['id']] = ['code' => $s['employee_code'], 'dept' => $s['department_id'] !== null ? (int) $s['department_id'] : null];
             }
             if (!$staff) {
-                throw new HttpException(422, 'NO_STAFF', 'Add staff in Admin > Staff before generating duties');
+                throw new HttpException(422, 'NO_STAFF', 'Add staff in Admin > Duty Staff before generating duties');
             }
 
             // Starting order: fewest duties in earlier published rosters first, then the longest since
@@ -395,6 +532,7 @@ class DutyService
             $dates = array_column($slots, 'exam_date');
             $unavailable = self::unavailabilityMap($pdo, min($dates), max($dates));
             $overrides = self::overrides($pdo, $roster['id']);
+            $roomsByKey = self::rooms($pdo, $roster['id']);
 
             // Auto assignments are rebuilt; manual ones are kept unless their slot no longer has exams.
             $pdo->prepare('DELETE FROM duty_assignments WHERE roster_id = :r AND is_manual = 0')->execute(['r' => $roster['id']]);
@@ -412,9 +550,10 @@ class DutyService
             $keptManual = array_sum(array_map('count', $manual));
 
             $insert = $pdo->prepare(
-                'INSERT INTO duty_assignments (roster_id, exam_date, time_slot_id, staff_id, role, is_manual, created_by)
-                 VALUES (:r, :d, :s, :staff, :role, 0, :u)'
+                'INSERT INTO duty_assignments (roster_id, exam_date, time_slot_id, room_id, staff_id, role, is_manual, created_by)
+                 VALUES (:r, :d, :s, :room, :staff, :role, 0, :u)'
             );
+            $postToRoom = $pdo->prepare('UPDATE duty_assignments SET room_id = :room WHERE id = :id');
             $moveToBack = static function (array $queue, array $ids): array {
                 if (!$ids) {
                     return $queue;
@@ -431,24 +570,49 @@ class DutyService
                 $slotId = $slot['time_slot_id'];
                 $slotDepts = array_flip($slot['department_ids']);
                 $taken = [];
-                $have = ['INVIGILATOR' => 0, 'RESERVE' => 0];
                 $manualIds = [];
                 foreach ($manual[$k] ?? [] as $a) {
                     $taken[$a['staff_id']] = true;
-                    $have[$a['role']]++;
                     $manualIds[] = $a['staff_id'];
                 }
                 // Hand-assigned staff did a duty here too: they go to the back of the rotation.
                 $queue = $moveToBack($queue, array_values(array_intersect($manualIds, $queue)));
 
-                $need = [
-                    'INVIGILATOR' => max(0, ($overrides[$k] ?? self::required($roster, $slot['total_students'])) - $have['INVIGILATOR']),
-                    'RESERVE' => max(0, $roster['reserve_per_slot'] - $have['RESERVE']),
-                ];
-                foreach ($need as $role => $n) {
+                // Buckets to fill: one per room of the seating allotment, or one for the whole slot.
+                $slotRooms = $roomsByKey[$k] ?? [];
+                $manualInv = array_values(array_filter($manual[$k] ?? [], fn ($a) => $a['role'] === 'INVIGILATOR'));
+                $manualRes = count(array_filter($manual[$k] ?? [], fn ($a) => $a['role'] === 'RESERVE'));
+                $buckets = [];
+                if ($slotRooms) {
+                    $roomIds = array_column($slotRooms, 'id');
+                    $have = array_fill_keys($roomIds, 0);
+                    $loose = [];
+                    foreach ($manualInv as $a) {
+                        if ($a['room_id'] !== null && isset($have[$a['room_id']])) {
+                            $have[$a['room_id']]++;
+                        } else {
+                            $loose[] = $a;
+                        }
+                    }
+                    foreach ($slotRooms as $r) {
+                        $need = self::roomTeachers($roster, $r['students']) - $have[$r['id']];
+                        // Hand-added invigilators without a room are posted to rooms that still need someone.
+                        while ($need > 0 && $loose) {
+                            $postToRoom->execute(['room' => $r['id'], 'id' => array_shift($loose)['id']]);
+                            $need--;
+                        }
+                        $buckets[] = ['role' => 'INVIGILATOR', 'room' => $r, 'need' => max(0, $need)];
+                    }
+                } else {
+                    $need = ($overrides[$k] ?? self::required($roster, $slot['total_students'])) - count($manualInv);
+                    $buckets[] = ['role' => 'INVIGILATOR', 'room' => null, 'need' => max(0, $need)];
+                }
+                $buckets[] = ['role' => 'RESERVE', 'room' => null, 'need' => max(0, $roster['reserve_per_slot'] - $manualRes)];
+
+                foreach ($buckets as $b) {
                     $picked = [];
                     foreach ($queue as $id) {
-                        if (count($picked) >= $n) {
+                        if (count($picked) >= $b['need']) {
                             break;
                         }
                         if (isset($taken[$id])
@@ -462,14 +626,16 @@ class DutyService
                         $dayCount[$id][$date] = ($dayCount[$id][$date] ?? 0) + 1;
                     }
                     foreach ($picked as $id) {
-                        $insert->execute(['r' => $roster['id'], 'd' => $date, 's' => $slotId, 'staff' => $id, 'role' => $role, 'u' => $userId]);
+                        $insert->execute(['r' => $roster['id'], 'd' => $date, 's' => $slotId, 'room' => $b['room']['id'] ?? null,
+                            'staff' => $id, 'role' => $b['role'], 'u' => $userId]);
                     }
                     $queue = $moveToBack($queue, $picked);
                     $assigned += count($picked);
-                    $missing = $n - count($picked);
+                    $missing = $b['need'] - count($picked);
                     if ($missing > 0) {
                         $shortfall += $missing;
-                        $shortSlots[] = ['exam_date' => $date, 'time_slot_label' => $slot['time_slot_label'], 'role' => $role, 'missing' => $missing];
+                        $shortSlots[] = ['exam_date' => $date, 'time_slot_label' => $slot['time_slot_label'], 'role' => $b['role'],
+                            'room' => $b['room']['room'] ?? null, 'missing' => $missing];
                     }
                 }
             }
@@ -549,23 +715,34 @@ class DutyService
         }
     }
 
-    public static function addAssignment(int $cycleId, string $date, int $slotId, int $staffId, string $role, bool $force, int $userId): int
+    /** $roomId: post the invigilator to this room of the slot's seating (null for reserves / no seating). */
+    public static function addAssignment(int $cycleId, string $date, int $slotId, int $staffId, string $role, ?int $roomId, bool $force, int $userId): int
     {
-        return Db::transaction(function (PDO $pdo) use ($cycleId, $date, $slotId, $staffId, $role, $force, $userId) {
+        return Db::transaction(function (PDO $pdo) use ($cycleId, $date, $slotId, $staffId, $role, $roomId, $force, $userId) {
             $roster = self::roster($cycleId, $pdo, true);
             self::assertEditable($roster);
             $slot = self::slotOrFail($cycleId, $date, $slotId, $pdo);
+            if ($role === 'RESERVE') {
+                $roomId = null;
+            }
+            if ($roomId !== null) {
+                $stmt = $pdo->prepare('SELECT id FROM duty_rooms WHERE id = :id AND roster_id = :r AND exam_date = :d AND time_slot_id = :s');
+                $stmt->execute(['id' => $roomId, 'r' => $roster['id'], 'd' => $date, 's' => $slotId]);
+                if (!$stmt->fetch()) {
+                    throw new HttpException(422, 'VALIDATION', 'That room is not part of this session\'s seating');
+                }
+            }
             $staff = self::staffOrFail($pdo, $staffId);
             self::confirmWarnings(self::check($pdo, $roster, $staff, $slot), $force);
             $pdo->prepare(
-                'INSERT INTO duty_assignments (roster_id, exam_date, time_slot_id, staff_id, role, is_manual, created_by)
-                 VALUES (:r, :d, :s, :staff, :role, 1, :u)'
-            )->execute(['r' => $roster['id'], 'd' => $date, 's' => $slotId, 'staff' => $staffId, 'role' => $role, 'u' => $userId]);
+                'INSERT INTO duty_assignments (roster_id, exam_date, time_slot_id, room_id, staff_id, role, is_manual, created_by)
+                 VALUES (:r, :d, :s, :room, :staff, :role, 1, :u)'
+            )->execute(['r' => $roster['id'], 'd' => $date, 's' => $slotId, 'room' => $roomId, 'staff' => $staffId, 'role' => $role, 'u' => $userId]);
             return (int) $pdo->lastInsertId();
         });
     }
 
-    /** Put another staff member on an existing duty. */
+    /** Put another staff member on an existing duty (same slot, same room). */
     public static function replaceAssignment(int $id, int $staffId, bool $force): array
     {
         return Db::transaction(function (PDO $pdo) use ($id, $staffId, $force) {
@@ -583,7 +760,7 @@ class DutyService
         });
     }
 
-    /** Exchange the staff of two duties in different slots. */
+    /** Exchange the staff of two duties in different slots (each duty keeps its room). */
     public static function swapAssignments(int $aId, int $bId, bool $force): array
     {
         return Db::transaction(function (PDO $pdo) use ($aId, $bId, $force) {
@@ -631,9 +808,7 @@ class DutyService
         $slot = self::slotOrFail($cycleId, $date, $slotId, $pdo);
         $unavailable = self::unavailabilityMap($pdo, $date, $date);
 
-        $stmt = $pdo->prepare(
-            'SELECT staff_id, exam_date, time_slot_id FROM duty_assignments WHERE roster_id = :r'
-        );
+        $stmt = $pdo->prepare('SELECT staff_id, exam_date, time_slot_id FROM duty_assignments WHERE roster_id = :r');
         $stmt->execute(['r' => $roster['id']]);
         $total = [];
         $sameDay = [];

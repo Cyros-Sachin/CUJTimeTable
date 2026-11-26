@@ -13,6 +13,7 @@ use App\Services\AuditService;
 use App\Services\DutyExportService;
 use App\Services\DutyService;
 use App\Services\PdfService;
+use App\Services\SeatingService;
 
 /** Invigilation duty roster API (EXAM_CELL only). Business rules live in DutyService. */
 class DutyController
@@ -109,9 +110,10 @@ class DutyController
         $data = Validator::validate($request->all(), [
             'staff_id' => ['required', 'int', 'min:1'],
             'role' => ['in:' . implode(',', DutyService::ROLES)],
+            'room_id' => ['int', 'min:1'],
         ]);
         $role = $data['role'] ?? 'INVIGILATOR';
-        $id = DutyService::addAssignment($cycleId, $slot['exam_date'], $slot['time_slot_id'], $data['staff_id'], $role, self::force($request), (int) $user['id']);
+        $id = DutyService::addAssignment($cycleId, $slot['exam_date'], $slot['time_slot_id'], $data['staff_id'], $role, $data['room_id'] ?? null, self::force($request), (int) $user['id']);
         AuditService::log((int) $user['id'], 'DUTY_ADD', 'duty_assignments', (string) $id, $slot + $data + ['cycle_id' => $cycleId], $request->ip);
         Response::json(['id' => $id], 201);
     }
@@ -142,6 +144,66 @@ class DutyController
             'staff_id' => $removed['staff_id'], 'exam_date' => $removed['exam_date'], 'time_slot_id' => $removed['time_slot_id'],
         ], $request->ip);
         Response::json(['ok' => true]);
+    }
+
+    // ---- Seating allotment ----------------------------------------------------------------
+
+    /** Replace one session's seating from the page: rooms = [{room, students}, ...] ([] clears it). */
+    public function setSeating(Request $request): void
+    {
+        $user = Auth::requireRole('EXAM_CELL');
+        $cycleId = self::cycleId($request);
+        $slot = self::slotParams($request);
+        $rooms = $request->input('rooms');
+        if (!is_array($rooms) || count($rooms) > 500) {
+            throw new HttpException(422, 'VALIDATION', 'Validation failed', ['rooms' => 'Send a list of rooms']);
+        }
+        $clean = [];
+        $errors = [];
+        foreach (array_values($rooms) as $i => $r) {
+            $name = trim((string) preg_replace('/\s+/u', ' ', (string) ($r['room'] ?? '')));
+            $students = $r['students'] ?? null;
+            if ($name === '' || mb_strlen($name) > DutyService::ROOM_NAME_MAX) {
+                $errors["rooms.{$i}.room"] = 'Room / class name is required (max ' . DutyService::ROOM_NAME_MAX . ' characters)';
+            }
+            if (!is_numeric($students) || (int) $students != $students || $students < 1 || $students > DutyService::ROOM_STUDENTS_MAX) {
+                $errors["rooms.{$i}.students"] = 'Students must be a whole number from 1 to ' . DutyService::ROOM_STUDENTS_MAX;
+            }
+            $clean[] = [$name, (int) $students];
+        }
+        if ($errors) {
+            throw new HttpException(422, 'VALIDATION', 'Check the highlighted rooms', $errors);
+        }
+        $result = DutyService::replaceSeating($cycleId, [$slot + ['rooms' => $clean]]);
+        self::audit($user, 'DUTY_SEATING_SET', null, $slot + ['cycle_id' => $cycleId, 'rooms' => count($clean)], $request);
+        Response::json($result);
+    }
+
+    public function seatingTemplate(Request $request): void
+    {
+        Auth::requireRole('EXAM_CELL');
+        $cycleId = self::cycleId($request);
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx(SeatingService::template($cycleId));
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="Seating_Allotment_' . self::fileLabel(DutyService::cycle($cycleId)) . '.xlsx"');
+        header('Cache-Control: no-store');
+        $writer->save('php://output');
+        exit;
+    }
+
+    public function importSeating(Request $request): void
+    {
+        $user = Auth::requireRole('EXAM_CELL');
+        $cycleId = self::cycleId($request);
+        $dryRun = (string) $request->input('dry_run', 'false') === 'true';
+        $result = SeatingService::import($cycleId, $_FILES['file'] ?? [], $dryRun);
+        if (!$dryRun) {
+            self::audit($user, 'DUTY_SEATING_IMPORT', null, ['cycle_id' => $cycleId, 'slots' => $result['slots'], 'rooms' => $result['rooms']], $request);
+        }
+        Response::json($result, $dryRun ? 200 : 201);
     }
 
     // ---- Unavailability -----------------------------------------------------------------

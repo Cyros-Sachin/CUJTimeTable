@@ -1,7 +1,7 @@
 // Invigilation duties (Exam Cell): rotation settings, generate, manual add / replace / swap / remove,
 // per-slot overrides, staff unavailability, publish, and exports.
 
-import { apiGet, apiSend, ApiError, buildQuery } from './api.js';
+import { apiGet, apiSend, apiUpload, ApiError, buildQuery } from './api.js';
 import { toast, confirmDialog, ddmmyyyy, el, clearFieldErrors, fieldErrorsFrom } from './ui.js';
 import { downloadPdfWithOptions } from './pdf-options.js';
 
@@ -130,13 +130,166 @@ async function pickStaffForSlot(slot, title) {
 
 // ---- Actions ----------------------------------------------------------------------------
 
-async function addToSlot(slot, role) {
-  const staffId = await pickStaffForSlot(slot, `Add ${roleLabel(role).toLowerCase()} · ${ddmmyyyy(slot.exam_date)} ${slot.time_slot_label}`);
+async function addToSlot(slot, role, room = null) {
+  const where = room ? ` · ${room.room}` : '';
+  const staffId = await pickStaffForSlot(slot, `Add ${roleLabel(role).toLowerCase()} · ${ddmmyyyy(slot.exam_date)} ${slot.time_slot_label}${where}`);
   if (!staffId) return;
   await withConflictConfirm(
-    (force) => apiSend('POST', '/duties/assignments', { cycle_id: cycleId, exam_date: slot.exam_date, time_slot_id: slot.time_slot_id, staff_id: staffId, role, force }),
+    (force) => apiSend('POST', '/duties/assignments', {
+      cycle_id: cycleId, exam_date: slot.exam_date, time_slot_id: slot.time_slot_id, staff_id: staffId, role, room_id: room ? room.id : null, force,
+    }),
     'Duty added',
   );
+}
+
+// ---- Seating allotment ------------------------------------------------------------------
+
+let seatingModalEl = null;
+function seatingRow(room = '', students = '') {
+  return el('tr', {}, [
+    el('td', {}, el('input', { type: 'text', class: 'form-control form-control-sm', 'data-f': 'room', maxlength: '60', value: room, placeholder: 'e.g. Room 101' })),
+    el('td', { style: 'width: 8rem' }, el('input', { type: 'number', class: 'form-control form-control-sm', 'data-f': 'students', min: '1', max: '1000', value: String(students) })),
+    el('td', { class: 'small text-muted text-nowrap', 'data-f': 'need' }),
+    el('td', { class: 'text-end' }, el('button', { type: 'button', class: 'btn btn-sm btn-link text-danger p-0', title: 'Remove row', 'data-f': 'del' }, el('i', { class: 'bi bi-x-lg' }))),
+  ]);
+}
+
+/** Type in / edit one session's seating: room / class + students, one row each. */
+async function editSeating(slot) {
+  if (!seatingModalEl) {
+    seatingModalEl = el('div', { class: 'modal fade', tabindex: '-1' }, el('div', { class: 'modal-dialog modal-lg modal-dialog-scrollable' }, el('div', { class: 'modal-content' }, [
+      el('div', { class: 'modal-header' }, [el('h5', { class: 'modal-title', 'data-role': 'title' }), el('button', { type: 'button', class: 'btn-close', 'data-bs-dismiss': 'modal' })]),
+      el('div', { class: 'modal-body' }, [
+        el('p', { class: 'small text-muted', 'data-role': 'hint' }),
+        el('table', { class: 'table table-sm align-middle mb-2' }, [
+          el('thead', {}, el('tr', {}, ['Room / Class', 'Students', 'Teachers', ''].map((h) => el('th', {}, h)))),
+          el('tbody', { 'data-role': 'rows' }),
+        ]),
+        el('div', { class: 'd-flex justify-content-between align-items-center' }, [
+          el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', 'data-role': 'add' }, [el('i', { class: 'bi bi-plus-lg me-1' }), 'Add room']),
+          el('span', { class: 'small', 'data-role': 'total' }),
+        ]),
+        el('div', { class: 'invalid-text mt-2', 'data-role': 'error' }),
+      ]),
+      el('div', { class: 'modal-footer' }, [
+        el('button', { type: 'button', class: 'btn btn-outline-danger me-auto', 'data-role': 'clear' }, 'Clear seating'),
+        el('button', { type: 'button', class: 'btn btn-secondary', 'data-bs-dismiss': 'modal' }, 'Cancel'),
+        el('button', { type: 'button', class: 'btn btn-primary', 'data-role': 'save' }, 'Save seating'),
+      ]),
+    ])));
+    document.body.appendChild(seatingModalEl);
+  }
+  const m = seatingModalEl;
+  const q = (role) => m.querySelector(`[data-role="${role}"]`);
+  const r = overview.roster;
+  const tbody = q('rows');
+  q('title').textContent = `Seating · ${ddmmyyyy(slot.exam_date)} (${slot.weekday}) ${slot.time_slot_label}`;
+  q('hint').textContent = `${slot.total_students} students registered in this session. Each room gets ${r.per_room_small} teacher(s), or ${r.per_room_large} if it seats more than ${r.room_threshold}.`;
+  q('error').textContent = '';
+  tbody.innerHTML = '';
+  (slot.rooms.length ? slot.rooms : [{ room: '', students: '' }]).forEach((x) => tbody.appendChild(seatingRow(x.room, x.students)));
+
+  const refresh = () => {
+    let seated = 0;
+    let teachers = 0;
+    tbody.querySelectorAll('tr').forEach((tr) => {
+      const n = Number(tr.querySelector('[data-f="students"]').value) || 0;
+      const need = n ? (n > r.room_threshold ? r.per_room_large : r.per_room_small) : 0;
+      seated += n;
+      teachers += need;
+      tr.querySelector('[data-f="need"]').textContent = n ? String(need) : '';
+    });
+    const diff = seated - slot.total_students;
+    q('total').innerHTML = '';
+    q('total').append(
+      `${seated} seated · ${teachers} teachers `,
+      diff !== 0 && seated ? el('span', { class: 'chip chip-reappear ms-1' }, diff > 0 ? `${diff} more than registered` : `${-diff} fewer than registered`) : '',
+    );
+  };
+  const onInput = () => refresh();
+  const onClick = (e) => {
+    const del = e.target.closest('[data-f="del"]');
+    if (del) { del.closest('tr').remove(); refresh(); }
+  };
+  const addRow = () => { tbody.appendChild(seatingRow()); tbody.lastChild.querySelector('input').focus(); };
+
+  const save = async (rooms) => {
+    q('error').textContent = '';
+    try {
+      await apiSend('PUT', '/duties/seating', { cycle_id: cycleId, exam_date: slot.exam_date, time_slot_id: slot.time_slot_id, rooms });
+      bootstrap.Modal.getOrCreateInstance(m).hide();
+      toast(rooms.length ? `Seating saved: ${rooms.length} room(s). Regenerate to post teachers room-wise.` : 'Seating cleared');
+      await load();
+    } catch (err) {
+      q('error').textContent = err instanceof ApiError && err.fields ? Object.values(err.fields).join(' · ') : errorMessage(err, 'Could not save the seating');
+    }
+  };
+  const onSave = () => {
+    const rooms = [...tbody.querySelectorAll('tr')]
+      .map((tr) => ({ room: tr.querySelector('[data-f="room"]').value.trim(), students: Number(tr.querySelector('[data-f="students"]').value) }))
+      .filter((x) => x.room || x.students);
+    if (!rooms.length) { q('error').textContent = 'Add at least one room, or use Clear seating.'; return; }
+    save(rooms);
+  };
+  const onClear = async () => {
+    const ok = await confirmDialog({ title: 'Clear seating', message: 'Remove this session\'s seating? Teachers posted to its rooms stay on duty but lose their room.', confirmLabel: 'Clear', danger: true });
+    if (ok) save([]);
+  };
+
+  tbody.addEventListener('input', onInput);
+  tbody.addEventListener('click', onClick);
+  q('add').addEventListener('click', addRow);
+  q('save').addEventListener('click', onSave);
+  q('clear').addEventListener('click', onClear);
+  q('clear').classList.toggle('d-none', !slot.rooms.length);
+  m.addEventListener('hidden.bs.modal', () => {
+    tbody.removeEventListener('input', onInput);
+    tbody.removeEventListener('click', onClick);
+    q('add').removeEventListener('click', addRow);
+    q('save').removeEventListener('click', onSave);
+    q('clear').removeEventListener('click', onClear);
+  }, { once: true });
+  refresh();
+  bootstrap.Modal.getOrCreateInstance(m).show();
+}
+
+/** Upload the seating Excel: validate first, show problems / mismatches, then save. */
+async function uploadSeating(file) {
+  const out = $('seatingResult');
+  out.innerHTML = '';
+  const send = async (dryRun) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('cycle_id', String(cycleId));
+    fd.append('dry_run', dryRun ? 'true' : 'false');
+    return (await apiUpload('/duties/seating/import', fd)).data;
+  };
+  try {
+    const check = await send(true);
+    const lines = [el('div', {}, `${check.rooms} rooms in ${check.slots} session(s), ${check.students} students seated.`)];
+    if (check.mismatches.length) {
+      lines.push(el('div', { class: 'mt-1' }, 'Seated ≠ registered in:'));
+      lines.push(el('ul', { class: 'mb-0 small' }, check.mismatches.map((x) => el('li', {}, `${ddmmyyyy(x.exam_date)} ${x.time_slot_label}: ${x.seated} seated, ${x.registered} registered`))));
+    }
+    const ok = await confirmDialog({
+      title: 'Upload seating',
+      message: `${check.rooms} rooms in ${check.slots} session(s). This replaces the seating of those sessions${check.mismatches.length ? ` (${check.mismatches.length} session(s) have a different seated count than registered)` : ''}. Continue?`,
+      confirmLabel: 'Upload',
+    });
+    out.appendChild(el('div', { class: `alert ${check.mismatches.length ? 'alert-warning' : 'alert-info'} py-2 small mb-2` }, lines));
+    if (!ok) return;
+    const res = await send(false);
+    toast(`Seating saved for ${res.slots} session(s). Regenerate the rotation to post teachers room-wise.`);
+    await load();
+  } catch (err) {
+    if (err instanceof ApiError && err.rows && err.rows.length) {
+      out.appendChild(el('div', { class: 'table-scroll', style: 'max-height:14rem;overflow-y:auto;' }, el('table', { class: 'table table-sm mb-2' }, [
+        el('thead', { class: 'table-danger' }, el('tr', {}, ['Row', 'Field', 'Message'].map((h) => el('th', {}, h)))),
+        el('tbody', {}, err.rows.map((x) => el('tr', {}, [el('td', {}, String(x.row)), el('td', {}, x.field), el('td', {}, x.message)]))),
+      ])));
+    }
+    toast(errorMessage(err, 'Could not upload the seating'), 'error');
+  }
 }
 
 async function replaceDuty(slot, a) {
@@ -263,8 +416,13 @@ function renderHeader() {
   f.min_per_slot.value = r.min_per_slot;
   f.reserve_per_slot.value = r.reserve_per_slot;
   f.max_per_day.value = r.max_per_day;
+  f.room_threshold.value = r.room_threshold;
+  f.per_room_small.value = r.per_room_small;
+  f.per_room_large.value = r.per_room_large;
   f.exclude_own_department.checked = !!r.exclude_own_department;
   [...f.elements].forEach((input) => { input.disabled = isPublished(); });
+  $('seatingTemplate').href = `/api/duties/seating/template${q}`;
+  $('seatingUploadBtn').disabled = isPublished();
 }
 
 function stat(label, value, hint, danger) {
@@ -280,7 +438,7 @@ function renderStats() {
   const short = t.shortfall + t.reserve_shortfall;
   $('statsRow').innerHTML = '';
   $('statsRow').append(
-    stat('Exam slots', t.slots, `${overview.slots.reduce((n, s) => n + s.paper_count, 0)} papers`),
+    stat('Exam slots', t.slots, `${t.slots_with_seating} with seating · ${t.rooms} rooms`),
     stat('Duties assigned', t.assigned, `of ${t.required + t.reserve_required} needed`),
     stat('Staff on duty', `${t.staff_on_duty} / ${t.active_staff}`, t.active_staff ? `load ${t.min_load}–${t.max_load} per person` : 'no active staff'),
     stat('Unfilled', short, short ? 'not enough eligible staff' : 'all slots covered', short > 0),
@@ -293,6 +451,11 @@ function renderStats() {
   }
   if (!overview.slots.length) {
     alerts.appendChild(el('div', { class: 'alert alert-info py-2' }, 'This exam cycle has no scheduled exams yet, so there are no duty slots.'));
+  }
+  const noSeating = overview.slots.filter((s) => !s.has_seating).length;
+  if (overview.slots.length && noSeating) {
+    alerts.appendChild(el('div', { class: 'alert alert-info py-2' },
+      `${noSeating} of ${overview.slots.length} sessions have no seating allotment yet; they use the students-per-invigilator estimate. Upload the seating or click "Seating" on a session.`));
   }
   if (overview.orphans.length) {
     alerts.appendChild(el('div', { class: 'alert alert-warning py-2' },
@@ -319,12 +482,34 @@ function dutyChip(slot, a) {
   ]);
 }
 
-function addButton(slot, role) {
+function addButton(slot, role, room = null) {
   if (isPublished()) return '';
-  return el('button', { type: 'button', class: 'btn btn-sm btn-link p-0 small', onclick: () => addToSlot(slot, role) }, [el('i', { class: 'bi bi-plus-circle me-1' }), 'Add']);
+  return el('button', { type: 'button', class: 'btn btn-sm btn-link p-0 small', onclick: () => addToSlot(slot, role, room) }, [el('i', { class: 'bi bi-plus-circle me-1' }), 'Add']);
+}
+
+/** Invigilators cell: room by room when the session has seating, else one list. */
+function invigilatorsCell(s) {
+  if (!s.has_seating) return [...s.invigilators.map((a) => dutyChip(s, a)), addButton(s, 'INVIGILATOR')];
+  const blocks = s.rooms.map((room) => el('div', { class: 'd-flex flex-wrap align-items-start gap-1 py-1 border-bottom' }, [
+    el('div', { class: 'small text-nowrap me-1', style: 'min-width: 9.5rem' }, [
+      el('span', { class: 'fw-semibold' }, room.room), ` · ${room.students} st. · `,
+      el('span', { class: room.shortfall ? 'text-danger fw-semibold' : 'text-muted' }, `${room.invigilators.length}/${room.required}`),
+    ]),
+    el('div', {}, [...room.invigilators.map((a) => dutyChip(s, a)), room.shortfall ? addButton(s, 'INVIGILATOR', room) : '']),
+  ]));
+  if (s.unroomed.length) {
+    blocks.push(el('div', { class: 'd-flex flex-wrap align-items-start gap-1 py-1' }, [
+      el('div', { class: 'small text-muted text-nowrap me-1', style: 'min-width: 9.5rem' }, 'No room yet'),
+      el('div', {}, s.unroomed.map((a) => dutyChip(s, a))),
+    ]));
+  }
+  return blocks;
 }
 
 function requiredCell(slot) {
+  if (slot.has_seating) {
+    return el('div', {}, [el('span', { class: 'fw-semibold' }, String(slot.required)), el('div', { class: 'small text-muted text-nowrap' }, 'from seating')]);
+  }
   if (isPublished()) return el('span', {}, String(slot.required));
   const input = el('input', {
     type: 'number', min: '0', max: '500', value: String(slot.required), class: 'form-control form-control-sm',
@@ -355,14 +540,20 @@ function renderSlots() {
     return el('tr', {}, [
       el('td', { class: 'text-nowrap' }, [ddmmyyyy(s.exam_date), el('br'), el('span', { class: 'small text-muted' }, s.weekday)]),
       el('td', { class: 'text-nowrap small' }, s.time_slot_label),
-      el('td', { class: 'small text-nowrap' }, `${s.paper_count} / ${s.total_students}`),
+      el('td', { class: 'small text-nowrap' }, [
+        `${s.paper_count} / ${s.total_students}`, el('br'),
+        el('button', {
+          type: 'button', class: `btn btn-sm ${s.has_seating ? 'btn-outline-secondary' : 'btn-outline-primary'} mt-1 py-0`,
+          disabled: isPublished() ? 'disabled' : undefined, onclick: () => editSeating(s),
+        }, [el('i', { class: 'bi bi-grid-3x3-gap me-1' }), s.has_seating ? `${s.rooms.length} rooms` : 'Seating']),
+      ]),
       el('td', {}, requiredCell(s)),
-      el('td', {}, [...s.invigilators.map((a) => dutyChip(s, a)), addButton(s, 'INVIGILATOR')]),
+      el('td', {}, invigilatorsCell(s)),
       el('td', {}, [...s.reserves.map((a) => dutyChip(s, a)), s.reserve_required || s.reserves.length ? addButton(s, 'RESERVE') : '']),
       el('td', {}, short > 0 ? el('span', { class: 'chip chip-reappear' }, `${short} short`) : el('i', { class: 'bi bi-check-circle text-success' })),
     ]);
   });
-  const heads = [['Date'], ['Time'], ['Papers / Students'], ['Needed'], ['Invigilators', 'min-width: 28rem'], ['Reserves', 'min-width: 12rem'], ['']];
+  const heads = [['Date'], ['Time'], ['Papers / Students'], ['Needed'], ['Invigilators', 'min-width: 28rem'], ['Reserves', 'min-width: 9rem'], ['']];
   wrap.appendChild(el('table', { class: 'table align-top mb-0' }, [
     el('thead', {}, el('tr', {}, heads.map(([h, style]) => el('th', { style }, h)))),
     el('tbody', {}, rows),
@@ -515,6 +706,9 @@ async function saveSettings(e) {
     min_per_slot: Number(f.min_per_slot.value),
     reserve_per_slot: Number(f.reserve_per_slot.value),
     max_per_day: Number(f.max_per_day.value),
+    room_threshold: Number(f.room_threshold.value),
+    per_room_small: Number(f.per_room_small.value),
+    per_room_large: Number(f.per_room_large.value),
     exclude_own_department: f.exclude_own_department.checked,
   };
   try {
@@ -561,6 +755,13 @@ async function init() {
   $('publishBtn').addEventListener('click', togglePublish);
   $('settingsForm').addEventListener('submit', saveSettings);
   $('slotSearch').addEventListener('input', applySearch);
+  const seatingFile = $('seatingFile');
+  $('seatingUploadBtn').addEventListener('click', () => seatingFile.click());
+  seatingFile.addEventListener('change', async () => {
+    const file = seatingFile.files[0];
+    seatingFile.value = '';
+    if (file) await uploadSeating(file);
+  });
   ['chartPdf', 'lettersPdf'].forEach((id) => $(id).addEventListener('click', (e) => {
     e.preventDefault();
     if ($(id).classList.contains('disabled')) return;

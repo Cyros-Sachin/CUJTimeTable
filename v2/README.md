@@ -87,9 +87,15 @@ Exam Cell only. **Admin > Duty Staff** holds the people duties rotate over (empl
 optional department / designation / email / phone; add one by one or import the Excel template).
 **Invigilation Duties** (sidebar) builds one roster per exam cycle from that cycle's date sheet:
 
-- **Slots** are every date + time slot that has at least one exam. Invigilators needed per slot =
-  `max(minimum per slot, ceil(students in the slot / students per invigilator))`; change a slot's
-  number in the table to override it. Reserves per slot come from the settings.
+- **Slots** are every date + time slot that has at least one exam.
+- **Seating allotment** (room-wise duties): upload the seating Excel (*Seating template* on the page,
+  pre-filled with what is saved: Date, Session, Room / Class, Students) or click *Seating* on a session to
+  type it in. Every room / class then gets 1 teacher, or 2 if it seats more than 35 (all three numbers are
+  in Rotation settings), and each invigilator is posted to a room. Uploading replaces the seating only for
+  the sessions in the file, so it can be uploaded day by day; seated vs. registered student counts are
+  compared and reported.
+- Sessions **without seating** fall back to `max(minimum per slot, ceil(students / students per
+  invigilator))`; change the number in the table to override it. Reserves per slot come from the settings.
 - **Rotation** is a least-recently-assigned cyclic queue: slots are filled in date/time order from the
   front of the queue and the people picked go to the back. Anyone skipped (marked unavailable, daily
   limit reached, or their own department has a paper in that slot when that option is on) keeps their
@@ -108,7 +114,7 @@ optional department / designation / email / phone; add one by one or import the 
 The "own department" option is strict: if most departments have papers in most sessions, the eligible
 pool per slot gets small and the page reports unfilled duties.
 
-Tables come from `db/migrations/005_invigilation_duties.sql` (applied automatically on start).
+Tables come from `db/migrations/005_invigilation_duties.sql` and `006_duty_seating_rooms.sql` (applied automatically on start).
 
 ## Common operations
 

@@ -19,15 +19,31 @@
   <div class="col-12 col-lg-6">
     <form class="card-surface p-3 h-100" id="settingsForm" novalidate>
       <h3 class="h6 fw-semibold mb-1">Rotation settings</h3>
-      <p class="small text-muted mb-3">Invigilators per slot = the larger of the minimum and students &divide; ratio, rounded up. Change a slot's number in the table to override it.</p>
+      <p class="small text-muted mb-3">Sessions with a seating allotment get teachers room by room. Sessions without seating use the estimate below (students &divide; ratio, at least the minimum).</p>
       <div class="row g-2">
+        <div class="col-4">
+          <label class="form-label small" for="set_threshold">Room size limit</label>
+          <input type="number" min="1" max="1000" class="form-control form-control-sm" id="set_threshold" name="room_threshold" />
+          <div class="invalid-text" data-error-for="room_threshold"></div>
+        </div>
+        <div class="col-4">
+          <label class="form-label small" for="set_small">Teachers up to limit</label>
+          <input type="number" min="1" max="10" class="form-control form-control-sm" id="set_small" name="per_room_small" />
+          <div class="invalid-text" data-error-for="per_room_small"></div>
+        </div>
+        <div class="col-4">
+          <label class="form-label small" for="set_large">Teachers above limit</label>
+          <input type="number" min="1" max="10" class="form-control form-control-sm" id="set_large" name="per_room_large" />
+          <div class="invalid-text" data-error-for="per_room_large"></div>
+        </div>
+        <div class="col-12"><hr class="my-1" /></div>
         <div class="col-6">
-          <label class="form-label small" for="set_spi">Students per invigilator</label>
+          <label class="form-label small" for="set_spi">Students per invigilator (no seating)</label>
           <input type="number" min="1" max="1000" class="form-control form-control-sm" id="set_spi" name="students_per_invigilator" />
           <div class="invalid-text" data-error-for="students_per_invigilator"></div>
         </div>
         <div class="col-6">
-          <label class="form-label small" for="set_min">Minimum per slot</label>
+          <label class="form-label small" for="set_min">Minimum per session (no seating)</label>
           <input type="number" min="0" max="500" class="form-control form-control-sm" id="set_min" name="min_per_slot" />
           <div class="invalid-text" data-error-for="min_per_slot"></div>
         </div>
@@ -63,8 +79,14 @@
     <div class="card-surface p-3">
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
         <h3 class="h6 fw-semibold mb-0">Duty chart</h3>
-        <input type="search" class="form-control form-control-sm" id="slotSearch" placeholder="Find staff by name or code…" style="max-width: 280px;" />
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <a href="#" id="seatingTemplate" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download me-1"></i>Seating template</a>
+          <button type="button" id="seatingUploadBtn" class="btn btn-outline-primary btn-sm"><i class="bi bi-cloud-upload me-1"></i>Upload seating</button>
+          <input type="file" id="seatingFile" accept=".xlsx" class="d-none" />
+          <input type="search" class="form-control form-control-sm" id="slotSearch" placeholder="Find staff by name or code…" style="max-width: 240px;" />
+        </div>
       </div>
+      <div id="seatingResult"></div>
       <div class="table-scroll" id="slotsWrap"><div class="skeleton" style="height:320px"></div></div>
     </div>
   </div>

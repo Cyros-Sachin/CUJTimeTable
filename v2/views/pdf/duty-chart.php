@@ -23,6 +23,22 @@ $people = static function (array $list): string {
     // Names flow inline (separated by semicolons) so a 40-invigilator slot takes a few lines, not 40.
     return implode('; ', $out);
 };
+// With a seating allotment: one line per room / class, its student count and its teachers.
+$invigilators = static function (array $s) use ($people): string {
+    if (!$s['has_seating']) {
+        return $people($s['invigilators']);
+    }
+    $lines = [];
+    foreach ($s['rooms'] as $room) {
+        $lines[] = '<b>' . pdf_text($room['room']) . '</b> <span class="code">(' . (int) $room['students'] . ' students)</span>: '
+            . ($room['invigilators'] ? $people($room['invigilators']) : '&mdash;')
+            . ($room['shortfall'] > 0 ? ' <span class="shorttext">[' . (int) $room['shortfall'] . ' short]</span>' : '');
+    }
+    if ($s['unroomed']) {
+        $lines[] = '<i>No room yet:</i> ' . $people($s['unroomed']);
+    }
+    return implode('<br />', $lines);
+};
 ?>
 <!doctype html>
 <html lang="en">
@@ -48,6 +64,7 @@ $people = static function (array $list): string {
   td.nowrap { white-space: nowrap; }
   td.people { line-height: 1.45; }
   td.short { color: #b91c1c; font-weight: bold; text-align: center; }
+  .shorttext { color: #b91c1c; font-weight: bold; }
   .code { font-size: 9.5px; color: #333; }
   table.footer { width: 100%; border-collapse: collapse; margin-top: 30px; }
   table.footer td { vertical-align: top; padding: 0; font-size: 12px; }
@@ -85,7 +102,7 @@ $people = static function (array $list): string {
         <th style="width:9%">Date (Day)</th>
         <th style="width:12%">Time</th>
         <th style="width:7%">Papers / Students</th>
-        <th style="width:47%">Invigilators</th>
+        <th style="width:47%">Invigilators (room-wise)</th>
         <th style="width:15%">Reserve</th>
         <th style="width:5%">Short</th>
       </tr>
@@ -96,8 +113,8 @@ $people = static function (array $list): string {
         <td class="center"><?= $i + 1 ?></td>
         <td class="center"><?= e(ddmmyyyy($s['exam_date'])) ?><br />(<?= e($s['weekday']) ?>)</td>
         <td class="center nowrap"><?= e($s['time_slot_label']) ?></td>
-        <td class="center"><?= (int) $s['paper_count'] ?> / <?= (int) $s['total_students'] ?></td>
-        <td class="people"><?= $people($s['invigilators']) ?></td>
+        <td class="center"><?= (int) $s['paper_count'] ?> / <?= (int) $s['total_students'] ?><?php if ($s['has_seating']): ?><br /><span class="code"><?= count($s['rooms']) ?> rooms</span><?php endif; ?></td>
+        <td class="people"><?= $invigilators($s) ?></td>
         <td class="people"><?= $people($s['reserves']) ?></td>
         <td class="<?= $short > 0 ? 'short' : 'center' ?>"><?= $short > 0 ? $short : '&ndash;' ?></td>
       </tr>
