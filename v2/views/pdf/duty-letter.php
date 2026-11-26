@@ -34,10 +34,11 @@ $examName = $cycle['title'] . ' - ' . $cycle['month_year'];
   table.duties { width: 100%; border-collapse: collapse; margin: 6px 0 14px; }
   table.duties th, table.duties td { border: 1px solid #000; padding: 4px 5px; font-size: 12px; text-align: center; }
   table.duties th { background: #e5e7eb; }
-  table.duties tr.duty-main td { border-bottom: none; }
-  table.duties tr.duty-course td { text-align: left; font-size: 11.5px; padding: 3px 8px 6px; border-top: 1px dotted #888; }
+  table.duties tr.duty-course td { text-align: left; font-size: 11.5px; padding: 3px 6px 4px; background: #f8fafc; }
+  table.duties tr.duty-course td.lbl { font-weight: bold; background: #eef2f7; font-size: 10.5px; text-align: center; }
+  table.duties tr.duty-course td.codes { text-align: center; }
   table.duties tr { page-break-inside: avoid; }
-  .course-label { color: #333; }
+  .muted { color: #555; font-style: italic; }
   ol.instructions { margin: 4px 0 0 18px; padding: 0; font-size: 12px; line-height: 1.5; }
   table.footer { width: 100%; border-collapse: collapse; margin-top: 22px; }
   table.footer td { vertical-align: top; padding: 0; font-size: 13px; }
@@ -90,7 +91,7 @@ $examName = $cycle['title'] . ' - ' . $cycle['month_year'];
     </thead>
     <tbody>
       <?php foreach ($person['duties'] as $i => $d): ?>
-      <tr class="duty-main">
+      <tr>
         <td rowspan="2"><?= $i + 1 ?></td>
         <td><?= e(ddmmyyyy($d['exam_date'])) ?></td>
         <td><?= e($d['weekday']) ?></td>
@@ -99,14 +100,15 @@ $examName = $cycle['title'] . ' - ' . $cycle['month_year'];
         <td><?= $d['role'] === 'RESERVE' ? 'Reserve Invigilator' : 'Invigilator' ?></td>
       </tr>
       <tr class="duty-course">
-        <td colspan="5">
-          <span class="course-label">Course Code &amp; Name:</span>
+        <td class="lbl">Course Code<br />&amp; Name</td>
+        <td colspan="2" class="codes"><?= !empty($d['courses']) ? implode('<br />', array_map(static fn ($c) => '<b>' . e($c['code']) . '</b>', $d['courses'])) : '<span class="muted">&ndash;</span>' ?></td>
+        <td colspan="2">
           <?php if (!empty($d['courses'])): ?>
-            <?= implode('; ', array_map(static fn ($c) => '<b>' . e($c['code']) . '</b> &ndash; ' . pdf_text($c['name']), $d['courses'])) ?>
+            <?= implode('<br />', array_map(static fn ($c) => pdf_text($c['name']), $d['courses'])) ?>
           <?php elseif ($d['role'] === 'RESERVE'): ?>
-            As directed by the Centre Superintendent
+            <span class="muted">As directed by the Centre Superintendent</span>
           <?php else: ?>
-            As per the seating plan of the room
+            <span class="muted">As per the seating plan of the room</span>
           <?php endif; ?>
         </td>
       </tr>
