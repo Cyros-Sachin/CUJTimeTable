@@ -43,7 +43,7 @@ foreach ($slots as $s) {
 <head>
 <meta charset="utf-8" />
 <style>
-  body { font-family: "DejaVu Sans Condensed", sans-serif; color: #000; font-size: 7pt; }
+  body { font-family: "DejaVu Sans Condensed", sans-serif; color: #000; font-size: 8.4pt; }
   .hindi { font-family: "lohitdevanagari", sans-serif; }
   .serif { font-family: "DejaVu Serif", serif; }
   table.letterhead { width: 100%; border-collapse: collapse; }
@@ -52,23 +52,23 @@ foreach ($slots as $s) {
   .l2 { font-size: 11pt; font-weight: bold; }
   .l3 { font-size: 7.5pt; }
   .rule { border: none; border-top: 1px solid #000; margin: 2px 0; }
-  table.refrow { width: 100%; border-collapse: collapse; font-size: 8pt; }
+  table.refrow { width: 100%; border-collapse: collapse; font-size: 9pt; }
   table.refrow td { padding: 0; }
   .title { text-align: center; font-weight: bold; font-size: 10pt; margin: 2px 0 1px; }
-  .summary { text-align: center; font-size: 7.5pt; color: #444; margin-bottom: 4px; }
+  .summary { text-align: center; font-size: 8.5pt; color: #444; margin-bottom: 4px; }
   table.chart { width: 100%; border-collapse: collapse; }
-  table.chart th, table.chart td { border: 0.5px solid #8a94a6; padding: 2px 4px; vertical-align: middle; }
-  table.chart thead th { background: #1e3a8a; color: #fff; font-size: 7.4pt; text-align: center; border-color: #1e3a8a; }
+  table.chart th, table.chart td { border: 0.5px solid #8a94a6; padding: 3px 5px; vertical-align: middle; }
+  table.chart thead th { background: #1e3a8a; color: #fff; font-size: 8.6pt; text-align: center; border-color: #1e3a8a; }
   table.chart tr { page-break-inside: avoid; }
-  tr.sess td { background: #dbe4f5; font-size: 7.8pt; padding: 3px 5px; border-top: 1px solid #1e3a8a; }
-  tr.sess .when { font-weight: bold; color: #1e3a8a; font-size: 8.2pt; }
+  tr.sess td { background: #dbe4f5; font-size: 8.8pt; padding: 4px 6px; border-top: 1px solid #1e3a8a; }
+  tr.sess .when { font-weight: bold; color: #1e3a8a; font-size: 9.4pt; }
   tr.sess .meta { color: #333; }
-  tr.res td { background: #f3f6fb; font-size: 7pt; }
+  tr.res td { background: #f3f6fb; font-size: 8.2pt; }
   tr.alt td { background: #fafbfd; }
   td.c { text-align: center; }
   td.rm { font-weight: bold; }
-  td.crs { font-size: 6.4pt; color: #333; }
-  .code { color: #666; font-size: 6.4pt; }
+  td.crs { font-size: 7.6pt; color: #333; }
+  .code { color: #666; font-size: 7.4pt; }
   .muted { color: #aaa; }
   .short { color: #b91c1c; font-weight: bold; }
   table.footer { width: 100%; border-collapse: collapse; margin-top: 10px; }
@@ -94,7 +94,7 @@ foreach ($slots as $s) {
   <table class="refrow serif">
     <tr>
       <td style="text-align:left"><?= $serial !== null ? e($serial) : e('CUJ/Exam/Invigilation/' . date('Y', strtotime($issuedOn)) . '/') ?></td>
-      <td style="text-align:center; font-weight:bold; font-size:9.5pt;"><?= pdf_text($title) ?></td>
+      <td style="text-align:center; font-weight:bold; font-size:10.5pt;"><?= pdf_text($title) ?></td>
       <td style="text-align:right"><?= e(long_date($issuedOn)) ?></td>
     </tr>
   </table>
