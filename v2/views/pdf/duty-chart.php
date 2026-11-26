@@ -9,15 +9,22 @@
 /** @var string|null $serial */
 /** @var string|null $note */
 
-// Compact grid: a thin band per session, then one cell per room (room · students on top,
-// invigilators below, one per line), six rooms to a line, so a whole cycle fits in a few pages.
+// One clean table: a column per field, one row per room, a shaded header row per session.
+// Column headings repeat on every page (thead).
 $serial = $serial ?? null;
 $note = $note ?? null;
-$perLine = 6;
-$cellW = round(100 / $perLine, 3) . '%';
+$invCols = 2;
+foreach ($slots as $s) {
+    foreach ($s['rooms'] as $r) {
+        $invCols = max($invCols, count($r['invigilators']));
+    }
+}
+$invCols = min($invCols, 4);
+$cols = 4 + $invCols;
+$invW = round(64 / $invCols, 2);
 $title = 'INVIGILATION DUTY CHART - ' . mb_strtoupper($cycle['title']) . ' - ' . $cycle['month_year'];
 
-$person = static fn (array $a): string => pdf_text($a['name']) . ' <span class="code">' . e($a['employee_code']) . '</span>';
+$person = static fn (array $a): string => pdf_text($a['name']) . ' <span class="code">(' . e($a['employee_code']) . ')</span>';
 $inline = static fn (array $list): string => $list ? implode(' &nbsp;&middot;&nbsp; ', array_map($person, $list)) : '<span class="muted">&mdash;</span>';
 
 $totRooms = 0;
@@ -49,20 +56,21 @@ foreach ($slots as $s) {
   table.refrow td { padding: 0; }
   .title { text-align: center; font-weight: bold; font-size: 10pt; margin: 2px 0 1px; }
   .summary { text-align: center; font-size: 7.5pt; color: #444; margin-bottom: 4px; }
-  table.chart { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  table.chart td { border: 0.5px solid #999; padding: 1.5px 3px 2px; vertical-align: top; line-height: 1.25; }
+  table.chart { width: 100%; border-collapse: collapse; }
+  table.chart th, table.chart td { border: 0.5px solid #8a94a6; padding: 2px 4px; vertical-align: middle; }
+  table.chart thead th { background: #1e3a8a; color: #fff; font-size: 7.4pt; text-align: center; border-color: #1e3a8a; }
   table.chart tr { page-break-inside: avoid; }
-  tr.band td { background: #1e3a8a; color: #fff; border-color: #1e3a8a; padding: 2.5px 5px; font-size: 7.8pt; }
-  tr.band .when { font-weight: bold; font-size: 8.4pt; }
-  tr.band .meta { color: #dbe4ff; }
-  tr.res td { background: #eef2ff; font-size: 7pt; padding: 2px 5px; }
-  .rm { font-weight: bold; color: #1e3a8a; }
-  .st { color: #555; }
-  .code { color: #666; font-size: 6.2pt; }
-  .muted { color: #999; }
+  tr.sess td { background: #dbe4f5; font-size: 7.8pt; padding: 3px 5px; border-top: 1px solid #1e3a8a; }
+  tr.sess .when { font-weight: bold; color: #1e3a8a; font-size: 8.2pt; }
+  tr.sess .meta { color: #333; }
+  tr.res td { background: #f3f6fb; font-size: 7pt; }
+  tr.alt td { background: #fafbfd; }
+  td.c { text-align: center; }
+  td.rm { font-weight: bold; }
+  td.crs { font-size: 6.4pt; color: #333; }
+  .code { color: #666; font-size: 6.4pt; }
+  .muted { color: #aaa; }
   .short { color: #b91c1c; font-weight: bold; }
-  td.blank { border: none !important; }
-  tr.gap td { border: none; height: 4px; padding: 0; }
   table.footer { width: 100%; border-collapse: collapse; margin-top: 10px; }
   table.footer td { vertical-align: top; padding: 0; font-size: 8.5pt; }
   .sign-block { text-align: center; }
@@ -96,39 +104,54 @@ foreach ($slots as $s) {
   </div>
 
   <table class="chart">
-    <?php foreach ($slots as $si => $s):
+    <thead>
+      <tr>
+        <th style="width:4%">S.No.</th>
+        <th style="width:13%">Room / Class</th>
+        <th style="width:5%">Students</th>
+        <th style="width:14%">Course Codes</th>
+        <?php for ($i = 1; $i <= $invCols; $i++): ?><th style="width:<?= $invW ?>%">Invigilator <?= $i ?></th><?php endfor; ?>
+      </tr>
+    </thead>
+    <tbody>
+    <?php foreach ($slots as $s):
         $short = $s['shortfall'] + $s['reserve_shortfall']; ?>
-      <?php if ($si > 0): ?><tr class="gap"><td colspan="<?= $perLine ?>"></td></tr><?php endif; ?>
-      <tr class="band">
-        <td colspan="<?= $perLine ?>">
-          <span class="when"><?= e(ddmmyyyy($s['exam_date'])) ?> (<?= e($s['weekday']) ?>) &nbsp;|&nbsp; <?= e($s['time_slot_label']) ?></span>
-          <span class="meta">&nbsp;&nbsp;<?= (int) $s['paper_count'] ?> papers &middot; <?= (int) $s['total_students'] ?> students<?php if ($s['has_seating']): ?> &middot; <?= count($s['rooms']) ?> rooms<?php endif; ?> &middot; <?= (int) $s['required'] ?> invigilators</span>
-          <?php if ($short): ?>&nbsp;&middot; <b><?= $short ?> unfilled</b><?php endif; ?>
+      <tr class="sess">
+        <td colspan="<?= $cols ?>">
+          <span class="when"><?= e(ddmmyyyy($s['exam_date'])) ?> (<?= e($s['weekday']) ?>) &nbsp;&middot;&nbsp; <?= e($s['time_slot_label']) ?></span>
+          <span class="meta">&nbsp;&nbsp;|&nbsp; <?= (int) $s['paper_count'] ?> papers &middot; <?= (int) $s['total_students'] ?> students<?php if ($s['has_seating']): ?> &middot; <?= count($s['rooms']) ?> rooms<?php endif; ?> &middot; <?= (int) $s['required'] ?> invigilators</span>
+          <?php if ($short): ?>&nbsp;&middot; <span class="short"><?= $short ?> unfilled</span><?php endif; ?>
         </td>
       </tr>
-      <?php if ($s['reserves']): ?>
-      <tr class="res"><td colspan="<?= $perLine ?>"><b>Reserve:</b> <?= $inline($s['reserves']) ?></td></tr>
-      <?php endif; ?>
       <?php if ($s['has_seating']): ?>
-        <?php foreach (array_chunk($s['rooms'], $perLine) as $line): ?>
-        <tr>
-          <?php foreach ($line as $room): ?>
-            <td style="width:<?= $cellW ?>">
-              <span class="rm"><?= pdf_text($room['room']) ?></span> <span class="st">(<?= (int) $room['students'] ?>)</span><br />
-              <?= $room['invigilators'] ? implode('<br />', array_map($person, $room['invigilators'])) : '<span class="muted">&mdash;</span>' ?>
-              <?php if ($room['shortfall'] > 0): ?><br /><span class="short"><?= (int) $room['shortfall'] ?> short</span><?php endif; ?>
+        <?php foreach ($s['rooms'] as $ri => $room):
+            $inv = $room['invigilators'];
+            $extra = array_slice($inv, $invCols); ?>
+        <tr<?= $ri % 2 ? ' class="alt"' : '' ?>>
+          <td class="c"><?= $ri + 1 ?></td>
+          <td class="rm"><?= pdf_text($room['room']) ?></td>
+          <td class="c"><?= (int) $room['students'] ?></td>
+          <td class="crs"><?= !empty($room['courses']) ? e(implode(', ', array_column($room['courses'], 'code'))) : '<span class="muted">&ndash;</span>' ?></td>
+          <?php for ($i = 0; $i < $invCols; $i++): ?>
+            <td>
+              <?php if (isset($inv[$i])): ?><?= $person($inv[$i]) ?><?php if ($i === $invCols - 1 && $extra): ?>, <?= implode(', ', array_map($person, $extra)) ?><?php endif; ?>
+              <?php elseif ($i < $room['required']): ?><span class="short">Not assigned</span>
+              <?php else: ?><span class="muted">&ndash;</span><?php endif; ?>
             </td>
-          <?php endforeach; ?>
-          <?php for ($i = count($line); $i < $perLine; $i++): ?><td class="blank" style="width:<?= $cellW ?>"></td><?php endfor; ?>
+          <?php endfor; ?>
         </tr>
         <?php endforeach; ?>
         <?php if ($s['unroomed']): ?>
-        <tr><td colspan="<?= $perLine ?>"><span class="rm">No room yet:</span> <?= $inline($s['unroomed']) ?></td></tr>
+        <tr><td></td><td class="rm">No room yet</td><td colspan="<?= $cols - 2 ?>"><?= $inline($s['unroomed']) ?></td></tr>
         <?php endif; ?>
       <?php else: ?>
-        <tr><td colspan="<?= $perLine ?>"><span class="rm">Invigilators:</span> <?= $inline($s['invigilators']) ?></td></tr>
+        <tr><td></td><td class="rm">Invigilators</td><td colspan="<?= $cols - 2 ?>"><?= $inline($s['invigilators']) ?></td></tr>
+      <?php endif; ?>
+      <?php if ($s['reserves']): ?>
+        <tr class="res"><td></td><td class="rm">Reserve</td><td colspan="<?= $cols - 2 ?>"><?= $inline($s['reserves']) ?></td></tr>
       <?php endif; ?>
     <?php endforeach; ?>
+    </tbody>
   </table>
 
   <table class="footer serif">
