@@ -643,37 +643,93 @@ async function renderBranding() {
     }
   });
 
-  const logoInput = el('input', { type: 'file', accept: 'image/png,image/jpeg', class: 'd-none' });
-  const logoCard = el('div', { class: 'card-surface p-4 mb-4', style: 'max-width:28rem' }, [
-    el('h3', { class: 'h6 fw-semibold mb-2' }, 'Logo'),
-    el('p', { class: 'small text-muted' }, 'PNG or JPG, up to 1MB. Appears at the top of each date sheet PDF.'),
-    logoInput,
-    el('button', { type: 'button', class: 'btn btn-outline-secondary', onclick: () => logoInput.click() }, 'Upload logo'),
-  ]);
-  logoInput.addEventListener('change', () => uploadBrandingFile('logo', logoInput.files[0]));
-
-  const sigInput = el('input', { type: 'file', accept: 'image/png,image/jpeg', class: 'd-none' });
-  const sigCard = el('div', { class: 'card-surface p-4', style: 'max-width:28rem' }, [
-    el('h3', { class: 'h6 fw-semibold mb-2' }, 'Signature'),
-    el('p', { class: 'small text-muted' }, "PNG or JPG, up to 1MB. Appears above the Controller's name on each date sheet PDF."),
-    sigInput,
-    el('button', { type: 'button', class: 'btn btn-outline-secondary', onclick: () => sigInput.click() }, 'Upload signature'),
-  ]);
-  sigInput.addEventListener('change', () => uploadBrandingFile('signature', sigInput.files[0]));
+  const logoCard = brandingImageCard({
+    kind: 'logo',
+    label: 'Logo',
+    help: 'PNG or JPG, up to 1MB. Appears at the top of each date sheet PDF.',
+    hasImage: Boolean(branding.logo_path),
+    extraClass: 'mb-4',
+  });
+  const sigCard = brandingImageCard({
+    kind: 'signature',
+    label: 'Signature',
+    help: "PNG or JPG, up to 1MB. Appears above the Controller's name on each date sheet PDF.",
+    hasImage: Boolean(branding.signature_path),
+    extraClass: '',
+  });
 
   root.append(form, logoCard, sigCard);
+}
 
-  async function uploadBrandingFile(kind, file) {
+function brandingImageCard({ kind, label, help, hasImage, extraClass }) {
+  const lower = label.toLowerCase();
+  const input = el('input', { type: 'file', accept: 'image/png,image/jpeg', class: 'd-none' });
+  const preview = el('div', {
+    class: 'border rounded d-flex align-items-center justify-content-center mb-3 bg-white',
+    style: 'height:120px;overflow:hidden',
+  });
+  const uploadBtn = el('button', { type: 'button', class: 'btn btn-outline-secondary', onclick: () => input.click() });
+  const removeBtn = el('button', { type: 'button', class: 'btn btn-outline-danger', onclick: remove }, 'Remove');
+
+  function render(present) {
+    preview.innerHTML = '';
+    if (present) {
+      // Cache-bust so a fresh upload replaces the old preview.
+      preview.appendChild(el('img', {
+        src: `/api/admin/branding/${kind}?t=${Date.now()}`,
+        alt: `Current ${lower}`,
+        style: 'max-height:100%;max-width:100%;object-fit:contain',
+        // Setting points at a file that is gone from disk: treat it as not uploaded.
+        onerror: () => render(false),
+      }));
+    } else {
+      preview.appendChild(el('span', { class: 'small text-muted' }, `No ${lower} uploaded`));
+    }
+    uploadBtn.textContent = present ? `Replace ${lower}` : `Upload ${lower}`;
+    removeBtn.classList.toggle('d-none', !present);
+  }
+
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    input.value = '';
     if (!file) return;
     const fd = new FormData();
     fd.append('file', file);
     try {
       await apiUpload(`/admin/branding/${kind}`, fd);
-      toast(`${kind === 'logo' ? 'Logo' : 'Signature'} uploaded`);
+      toast(`${label} uploaded`);
+      render(true);
     } catch (err) {
       toast(err instanceof ApiError ? err.message : 'Upload failed', 'error');
     }
+  });
+
+  async function remove() {
+    const ok = await confirmDialog({
+      title: `Remove ${lower}`,
+      message: `The ${lower} will no longer appear on date sheet PDFs.`,
+      confirmLabel: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await apiSend('DELETE', `/admin/branding/${kind}`);
+      toast(`${label} removed`);
+      render(false);
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : `Could not remove ${lower}`, 'error');
+    }
   }
+
+  render(hasImage);
+
+  return el('div', { class: `card-surface p-4 ${extraClass}`, style: 'max-width:28rem' }, [
+    el('h3', { class: 'h6 fw-semibold mb-2' }, label),
+    el('p', { class: 'small text-muted' }, help),
+    preview,
+    input,
+    el('div', { class: 'd-flex gap-2' }, [uploadBtn, removeBtn]),
+  ]);
 }
 
 async function renderAuditLog(page = 1) {

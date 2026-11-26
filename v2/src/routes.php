@@ -112,6 +112,10 @@ $router->get('/api/admin/branding', [AdminController::class, 'getBranding']);
 $router->put('/api/admin/branding', [AdminController::class, 'updateBranding']);
 $router->post('/api/admin/branding/logo', [AdminController::class, 'uploadLogo']);
 $router->post('/api/admin/branding/signature', [AdminController::class, 'uploadSignature']);
+$router->get('/api/admin/branding/logo', [AdminController::class, 'logoImage']);
+$router->get('/api/admin/branding/signature', [AdminController::class, 'signatureImage']);
+$router->delete('/api/admin/branding/logo', [AdminController::class, 'deleteLogo']);
+$router->delete('/api/admin/branding/signature', [AdminController::class, 'deleteSignature']);
 
 $router->get('/api/admin/audit-logs', [AdminController::class, 'auditLogs']);
 

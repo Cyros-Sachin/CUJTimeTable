@@ -622,7 +622,75 @@ class AdminController
 
         $stmt = Db::conn()->prepare('INSERT INTO settings (k, v) VALUES (:k, :v) ON DUPLICATE KEY UPDATE v = VALUES(v)');
         $stmt->execute(['k' => $settingKey, 'v' => $relPath]);
+        // A previous upload with the other extension would otherwise linger on disk.
+        $otherExt = $ext === 'png' ? 'jpg' : 'png';
+        $stale = __DIR__ . '/../../storage/branding/' . "{$baseName}.{$otherExt}";
+        if (is_file($stale)) {
+            @unlink($stale);
+        }
+
         $this->audit('ADMIN_UPLOAD_' . mb_strtoupper($baseName), 'settings', $settingKey, null, $request);
+        Response::json(['ok' => true]);
+    }
+
+    public function logoImage(Request $request): void
+    {
+        $this->streamBrandingImage('logo_path');
+    }
+
+    public function signatureImage(Request $request): void
+    {
+        $this->streamBrandingImage('signature_path');
+    }
+
+    public function deleteLogo(Request $request): void
+    {
+        $this->deleteBrandingImage($request, 'logo_path', 'logo');
+    }
+
+    public function deleteSignature(Request $request): void
+    {
+        $this->deleteBrandingImage($request, 'signature_path', 'signature');
+    }
+
+    private function brandingSetting(string $settingKey): string
+    {
+        $stmt = Db::conn()->prepare('SELECT v FROM settings WHERE k = :k');
+        $stmt->execute(['k' => $settingKey]);
+        return (string) ($stmt->fetchColumn() ?: '');
+    }
+
+    private function streamBrandingImage(string $settingKey): void
+    {
+        $this->user();
+        $relPath = $this->brandingSetting($settingKey);
+        $fullPath = __DIR__ . '/../../storage/branding/' . basename($relPath);
+        if ($relPath === '' || !is_file($fullPath)) {
+            throw new HttpException(404, 'NOT_FOUND', 'No image uploaded');
+        }
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        $ext = strtolower((string) pathinfo($fullPath, PATHINFO_EXTENSION));
+        header('Content-Type: ' . ($ext === 'png' ? 'image/png' : 'image/jpeg'));
+        header('Cache-Control: no-store');
+        header('Content-Length: ' . filesize($fullPath));
+        readfile($fullPath);
+        exit;
+    }
+
+    private function deleteBrandingImage(Request $request, string $settingKey, string $baseName): void
+    {
+        $this->user();
+        $dir = __DIR__ . '/../../storage/branding/';
+        foreach (['png', 'jpg'] as $ext) {
+            if (is_file($dir . "{$baseName}.{$ext}")) {
+                @unlink($dir . "{$baseName}.{$ext}");
+            }
+        }
+        $stmt = Db::conn()->prepare('INSERT INTO settings (k, v) VALUES (:k, \'\') ON DUPLICATE KEY UPDATE v = \'\'');
+        $stmt->execute(['k' => $settingKey]);
+        $this->audit('ADMIN_DELETE_' . mb_strtoupper($baseName), 'settings', $settingKey, null, $request);
         Response::json(['ok' => true]);
     }
 
